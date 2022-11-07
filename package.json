@@ -1,0 +1,36 @@
+{
+  "name": "typescript-template",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "npm run clean && tsc",
+    "clean": "rimraf ./dist",
+    "lint": "eslint . --ext .ts,.js",
+    "format": "prettier -w ./src",
+    "start": "node -r dotenv/config ./dist/index.js",
+    "start:dev": "ts-node -r dotenv/config ./src/index.ts",
+    "update:lib": "npm install @infinityxyz/lib@latest",
+    "pre:push": "npm run format && npm run lint && npm run build"
+  },
+  "dependencies": {
+    "dotenv": "^16.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^17.0.35",
+    "@typescript-eslint/eslint-plugin": "^5.25.0",
+    "@typescript-eslint/parser": "^5.25.0",
+    "eslint": "^8.15.0",
+    "eslint-config-prettier": "^8.5.0",
+    "eslint-plugin-eslint-comments": "^3.2.0",
+    "prettier": "^2.6.2",
+    "rimraf": "^3.0.2",
+    "ts-node": "^10.7.0",
+    "typescript": "^4.6.4"
+  },
+  "prettier": {
+    "tabWidth": 2,
+    "printWidth": 120,
+    "singleQuote": true,
+    "trailingComma": "none",
+    "semi": true
+  }
+}
