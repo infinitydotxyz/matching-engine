@@ -1,5 +1,9 @@
-import 'module-alias/register';
-
 import { config } from '@/config';
 
-console.log(config.test);
+import { logger } from './common/logger';
+
+process.on('unhandledRejection', (error) => {
+  logger.error('process', `Unhandled rejection: ${error}`);
+});
+
+logger.info('process', `Starting server with config: ${config.env.mode}`);

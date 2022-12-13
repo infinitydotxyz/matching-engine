@@ -3,7 +3,9 @@
     "outDir": "./dist",
     "allowSyntheticDefaultImports": true,
     "declaration": true,
+    "declarationMap": true,
     "removeComments": true,
+    "skipLibCheck": true,
     "sourceMap": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
@@ -16,10 +18,11 @@
     "baseUrl": "src",
     "paths": {
       "@/config": ["config/index.ts"],
-      "@/config/*": ["config/*"]
+      "@/config/*": ["config/*"],
+      "@/common/*": ["common/*"]
     }
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*.ts"],
   "ts-node": {
     "require": ["tsconfig-paths/register"]
   }
