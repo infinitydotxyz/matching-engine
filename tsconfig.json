@@ -2,6 +2,9 @@
   "compilerOptions": {
     "outDir": "./dist",
     "allowSyntheticDefaultImports": true,
+    "declaration": true,
+    "removeComments": true,
+    "sourceMap": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "incremental": true,
@@ -9,7 +12,15 @@
     "moduleResolution": "node",
     "resolveJsonModule": true,
     "strict": true,
-    "target": "es2020"
+    "target": "es2020",
+    "baseUrl": "src",
+    "paths": {
+      "@/config": ["config/index.ts"],
+      "@/config/*": ["config/*"]
+    }
   },
-  "include": ["src/"]
+  "include": ["src/**/*"],
+  "ts-node": {
+    "require": ["tsconfig-paths/register"]
+  }
 }

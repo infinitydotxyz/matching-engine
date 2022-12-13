@@ -15,9 +15,10 @@
     "prettier"
   ],
   "env": {
-    "node": true
+    "node": true,
+    "jest": true
   },
-  "ignorePatterns": [".eslintrc", "dist/**/*"],
+  "ignorePatterns": [".eslintrc.js", "jest.config.ts", "**/*.spec"],
   "rules": {
     "eslint-comments/disable-enable-pair": "off",
     "curly": 1
