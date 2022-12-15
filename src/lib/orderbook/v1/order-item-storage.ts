@@ -4,7 +4,7 @@ import { OrderStorage } from './order-storage.abstract';
 export class OrderItemStorage extends OrderStorage {
   storageKey = 'order-item';
 
-  getTokenSellsSet(constraints: { complication: string; currency: string; collection: string; tokenId: string }) {
+  getTokenListingsSet(constraints: { complication: string; currency: string; collection: string; tokenId: string }) {
     const scope = 'token-orders';
     const side = 'sell';
 
@@ -17,7 +17,7 @@ export class OrderItemStorage extends OrderStorage {
     return `scope:${scope}:complication:${constraints.complication}:currency:${constraints.currency}:side:${side}:collection:${constraints.collection}:tokenId:${constraints.tokenId}`;
   }
 
-  getCollectionTokenSellsSet(constraints: { complication: string; currency: string; collection: string }) {
+  getCollectionTokenListingsSet(constraints: { complication: string; currency: string; collection: string }) {
     const scope = 'collection-token-orders';
     const side = 'sell';
 
@@ -78,13 +78,13 @@ export class OrderItemStorage extends OrderStorage {
       case 'sell:token': {
         const tokenId = (orderItem as { collection: string; tokenId: string }).tokenId;
 
-        const tokenSells = this.getTokenSellsSet({
+        const tokenSells = this.getTokenListingsSet({
           complication: order.params.complication,
           currency: order.params.currency,
           collection: orderItem.collection,
           tokenId
         });
-        const tokenCollectionSells = this.getCollectionTokenSellsSet({
+        const tokenCollectionSells = this.getCollectionTokenListingsSet({
           complication: order.params.complication,
           currency: order.params.currency,
           collection: orderItem.collection
@@ -98,8 +98,10 @@ export class OrderItemStorage extends OrderStorage {
     }
 
     const pipeline = this._db.pipeline();
+
+    const orderScore = order.params.startPriceEth;
     for (const item of sets) {
-      pipeline.sadd(item, order.id);
+      pipeline.zadd(item, orderScore, order.id);
     }
 
     await pipeline.exec();

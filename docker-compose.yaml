@@ -1,8 +1,8 @@
 version: '3'
 services:
   redis:
-    image: redis:6.2.8
-    command: redis-server --requirepass password
+    image: redis/redis-stack-server:latest
+    command: sh -c "redis-stack-server"
     networks:
       - local
     ports: 

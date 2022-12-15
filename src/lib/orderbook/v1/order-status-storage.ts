@@ -17,20 +17,20 @@ export class OrderStatusStorage extends OrderStorage {
 
     const toRemove = this.statuses.filter((item) => item !== status).map((item) => this._getKey(item));
 
-    let command = this._db.multi().sadd(key, orderId);
+    let command = this._db.multi().zadd(key, -1, orderId);
 
     for (const item of toRemove) {
-      command = command.srem(item, orderId);
+      command = command.zrem(item, orderId);
     }
 
     await command.exec();
   }
 
   async getSizeByStatus(status: Status): Promise<number> {
-    return await this._db.scard(this._getKey(status));
+    return await this._db.zcard(this._getKey(status));
   }
 
-  getStatusSetId(status: Status): string {
+  getStatusSetKey(status: Status): string {
     return this._getKey(status);
   }
 }

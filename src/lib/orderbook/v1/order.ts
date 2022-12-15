@@ -1,5 +1,5 @@
 import { BigNumber, constants } from 'ethers/lib/ethers';
-import { parseEther, parseUnits } from 'ethers/lib/utils';
+import { formatEther, parseUnits } from 'ethers/lib/utils';
 
 import { ChainId, ChainOBOrder } from '@infinityxyz/lib/types/core';
 
@@ -90,9 +90,9 @@ export class Order {
       signer: signedOrder.signer,
       numItems: constraints[0].toNumber(),
       startPriceWei: constraints[1].toString(),
-      startPriceEth: parseEther(constraints[1].toString()).toNumber(),
+      startPriceEth: parseFloat(formatEther(constraints[1].toString())),
       endPriceWei: constraints[2].toString(),
-      endPriceEth: parseEther(constraints[2].toString()).toNumber(),
+      endPriceEth: parseFloat(formatEther(constraints[2].toString())),
       startTime: constraints[3].toNumber(),
       endTime: constraints[4].toNumber(),
       startTimeMs: constraints[3].toNumber() * 1000,
