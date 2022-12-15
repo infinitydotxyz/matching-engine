@@ -21,7 +21,8 @@ const getMode = (): 'dev' | 'prod' => {
 
 export const config = {
   env: {
-    mode: getMode()
+    mode: getMode(),
+    chainId: getEnvVariable('CHAIN_ID', true)
   },
   redis: {
     connectionUrl: getEnvVariable('REDIS_URL')

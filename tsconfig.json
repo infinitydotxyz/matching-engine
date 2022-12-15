@@ -19,7 +19,8 @@
     "paths": {
       "@/config": ["config/index.ts"],
       "@/config/*": ["config/*"],
-      "@/common/*": ["common/*"]
+      "@/common/*": ["common/*"],
+      "@/lib/*": ["lib/*"]
     }
   },
   "include": ["src/**/*.ts"],

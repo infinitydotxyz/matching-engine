@@ -16,6 +16,8 @@
     "pre:push": "npm run format && npm run lint && npm run build"
   },
   "dependencies": {
+    "@infinityxyz/lib": "^1.273.1",
+    "bullmq": "^3.4.1",
     "dotenv": "^16.0.1",
     "ethers": "^5.6.6",
     "ioredis": "^5.2.4",
@@ -43,6 +45,7 @@
   },
   "_moduleAliases": {
     "@/config": "dist/config",
-    "@/common": "dist/common"
+    "@/common": "dist/common",
+    "@/lib": "dist/lib"
   }
 }
