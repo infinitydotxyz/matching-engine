@@ -1,3 +1,4 @@
+import { Worker } from 'bullmq';
 import { Redis } from 'ioredis';
 
 import { ChainId } from '@infinityxyz/lib/types/core';
@@ -28,6 +29,8 @@ export class MatchingEngine {
       return await this.matchTokenOffer(order, orderItem);
     } else if (order.params.side === 'sell' && 'tokenId' in orderItem) {
       return await this.matchTokenListing(order, orderItem);
+    } else if (order.params.side === 'buy') {
+      return await this.matchCollectionOffer(order, orderItem);
     } else {
       throw new Error('Not implemented');
     }
@@ -48,7 +51,7 @@ export class MatchingEngine {
       this._db
         .pipeline()
         .zinterstore(orderMatches, 2, tokenListingSet, activeOrdersSet, 'AGGREGATE', 'MAX')
-        .zrange(orderMatches, 0, order.params.startPriceEth, 'BYSCORE', 'LIMIT', 0, 100, 'WITHSCORES')
+        .zrange(orderMatches, 0, order.params.startPriceEth, 'BYSCORE', 'LIMIT', 0, 1000, 'WITHSCORES') // TODO what should the limit be?
         .del(orderMatches)
         .exec()
         .then((results) => {
@@ -100,6 +103,11 @@ export class MatchingEngine {
     const matches = await new Promise<{ id: string; value: number }[]>((resolve, reject) => {
       this._db
         .pipeline()
+        /**
+         * we perform separate intersections with active orders under the assumption that
+         * we are not pruning inactive orders - if this is not the case it is likely more performant
+         * to perform a union of token offers and collection offers then intersect with active orders
+         */
         .zinterstore(activeTokenOffers, 2, tokenOffersSet, activeOrdersSet, 'AGGREGATE', 'MAX')
         .zinterstore(activeCollectionOffers, 2, collectionOffersSet, activeOrdersSet, 'AGGREGATE', 'MAX')
         .zunionstore(orderMatches, 2, activeCollectionOffers, activeTokenOffers, 'AGGREGATE', 'MAX')
@@ -111,7 +119,7 @@ export class MatchingEngine {
           'REV',
           'LIMIT',
           0,
-          100,
+          1000,
           'WITHSCORES'
         )
         .del(orderMatches, activeTokenOffers, activeCollectionOffers)
@@ -174,7 +182,7 @@ export class MatchingEngine {
       this._db
         .pipeline()
         .zinterstore(orderMatches, 2, collectionListingsSet, activeOrdersSet, 'AGGREGATE', 'MAX')
-        .zrange(orderMatches, 0, order.params.startPriceEth, 'BYSCORE', 'LIMIT', 0, 100, 'WITHSCORES')
+        .zrange(orderMatches, 0, order.params.startPriceEth, 'BYSCORE', 'LIMIT', 0, 1000, 'WITHSCORES')
         .del(orderMatches)
         .exec()
         .then((results) => {

@@ -1,12 +1,7 @@
-import { constants } from 'ethers';
-import { parseUnits } from 'ethers/lib/utils';
-
 import { ChainId } from '@infinityxyz/lib/types/core';
-import { chainConstants } from '@infinityxyz/lib/utils/constants';
 
 import { redis } from '@/common/db';
 import { OrderbookV1 } from '@/lib/orderbook';
-import { Order } from '@/lib/orderbook/v1';
 
 import { MatchingEngine } from '.';
 import { getOrder } from './get-order';

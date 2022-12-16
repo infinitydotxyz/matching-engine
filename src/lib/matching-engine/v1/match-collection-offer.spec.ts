@@ -1,12 +1,7 @@
-import { constants } from 'ethers';
-import { parseUnits } from 'ethers/lib/utils';
-
 import { ChainId } from '@infinityxyz/lib/types/core';
-import { chainConstants } from '@infinityxyz/lib/utils/constants';
 
 import { redis } from '@/common/db';
 import { OrderbookV1 } from '@/lib/orderbook';
-import { Order } from '@/lib/orderbook/v1';
 
 import { MatchingEngine } from '.';
 import { getOrder } from './get-order';
@@ -40,7 +35,7 @@ describe('Matching Engine V1 - Match Token Listing', () => {
     await orderbook.add({ order: tokenListing, status: 'active' });
     await orderbook.add({ order: tokenOffer, status: 'active' });
 
-    const result = await matchingEngine.matchOrder(tokenListing);
+    const result = await matchingEngine.matchOrder(tokenOffer);
     console.log(result);
     expect(result[0].id).toBeDefined();
   });
