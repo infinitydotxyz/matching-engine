@@ -1,3 +1,5 @@
+import { ChainId } from '@infinityxyz/lib/types/core';
+
 const getEnvVariable = (key: string, required = true): string => {
   if (key in process.env && process.env[key] != null && typeof process.env[key] === 'string') {
     return process.env[key] as string;
@@ -22,7 +24,8 @@ const getMode = (): 'dev' | 'prod' => {
 export const config = {
   env: {
     mode: getMode(),
-    chainId: getEnvVariable('CHAIN_ID', true)
+    chainId: getEnvVariable('CHAIN_ID', true) as ChainId,
+    debug: Number(getEnvVariable('DEBUG', false)) === 1
   },
   redis: {
     connectionUrl: getEnvVariable('REDIS_URL')

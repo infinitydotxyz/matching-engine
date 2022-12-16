@@ -6,7 +6,7 @@ export interface MatchingEngineOptions {
   debug?: boolean;
 }
 
-export type JobData<T> = T & {
+export type WithTiming<T> = T & {
   timing: {
     created: number;
     started: number;

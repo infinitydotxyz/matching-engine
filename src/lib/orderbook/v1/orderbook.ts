@@ -22,4 +22,9 @@ export class Orderbook extends AbstractOrderbook<Order, Status> {
       return { isValid: false, error: new OrderbookOrderError(order.id, ErrorCode.InvalidOrder, `Unknown error`) };
     }
   }
+
+  async getOrders(ids: string | string[]): Promise<(Order | null)[]> {
+    const items = Array.isArray(ids) ? ids : [ids];
+    return await Promise.all(items.map((id) => this._storage.get(id)));
+  }
 }

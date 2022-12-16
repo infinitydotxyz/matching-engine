@@ -1,4 +1,4 @@
-import { Worker } from 'bullmq';
+import { BulkJobOptions, Job, Worker } from 'bullmq';
 import { Redis } from 'ioredis';
 
 import { ChainId } from '@infinityxyz/lib/types/core';
@@ -6,16 +6,62 @@ import { ChainId } from '@infinityxyz/lib/types/core';
 import { logger } from '@/common/logger';
 import { OrderbookV1 as OB } from '@/lib/orderbook';
 
-export class MatchingEngine {
-  public readonly version = 'v1';
+import { AbstractMatchingEngine } from '../matching-engine.abstract';
+import { MatchingEngineOptions } from '../types';
+
+export type MatchingEngineResult = {
+  id: string;
+  bestMatch: string | null;
+};
+
+export class MatchingEngine extends AbstractMatchingEngine<OB.Types.OrderParams, MatchingEngineResult> {
+  public readonly version: string;
 
   constructor(
-    protected _db: Redis,
-    protected _chainId: ChainId,
+    _db: Redis,
+    _chainId: ChainId,
     protected _orderbook: OB.Orderbook,
     protected _orderItemStorage: OB.OrderItemStorage,
-    protected _orderStatusStorage: OB.OrderStatusStorage
-  ) {}
+    protected _orderStatusStorage: OB.OrderStatusStorage,
+    options?: MatchingEngineOptions | undefined
+  ) {
+    const version = 'v1';
+    super(_db, _chainId, `matching-engine:${version}`, options);
+    this.version = version;
+  }
+
+  async processOrder(job: Job<OB.Types.OrderParams, unknown, string>): Promise<MatchingEngineResult> {
+    const order = new OB.Order(job.data);
+    const matches = await this.matchOrder(order);
+
+    const bestMatch = matches[0];
+    if (!bestMatch) {
+      return {
+        id: order.id,
+        bestMatch: null
+      };
+    }
+
+    return {
+      id: job.data.id,
+      bestMatch: bestMatch.id
+    };
+  }
+
+  async add(orders: OB.Types.OrderParams | OB.Types.OrderParams[]): Promise<void> {
+    const arr = Array.isArray(orders) ? orders : [orders];
+    const jobs: {
+      name: string;
+      data: OB.Types.OrderParams;
+      opts?: BulkJobOptions | undefined;
+    }[] = arr.map((item) => {
+      return {
+        name: `${item.id}`,
+        data: item
+      };
+    });
+    await this._queue.addBulk(jobs);
+  }
 
   async matchOrder(order: OB.Order): Promise<
     {

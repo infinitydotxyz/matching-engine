@@ -1,17 +1,16 @@
+import { ChainId } from '@infinityxyz/lib/types/core';
+
+import { redis } from '@/common/db';
+import { logger } from '@/common/logger';
 import { config } from '@/config';
+import { MatchingEngine } from '@/lib/matching-engine/v1';
+import { getOrder } from '@/lib/matching-engine/v1/get-order';
+import { OrderbookV1 } from '@/lib/orderbook';
 
-import { redis } from './common/db';
-import { logger } from './common/logger';
-import { MatchingEngine } from './lib/matching-engine/v1';
-import { OrderbookV1 } from './lib/orderbook';
+export async function main() {
+  const listing = getOrder(ChainId.Mainnet, 1, true, 'single-token', { collection: '0x2', tokenId: '1' });
+  const offer = getOrder(ChainId.Mainnet, 1, false, 'single-token', { collection: '0x2', tokenId: '1' });
 
-process.on('unhandledRejection', (error) => {
-  logger.error('process', `Unhandled rejection: ${error}`);
-});
-
-logger.info('process', `Starting server with config: ${config.env.mode}`);
-
-async function main() {
   const minOrderStorage = new OrderbookV1.MinOrderStorage(redis, config.env.chainId, 'v1');
   const rawOrderStorage = new OrderbookV1.RawOrderStorage(redis, config.env.chainId, 'v1');
   const orderStatusStorage = new OrderbookV1.OrderStatusStorage(redis, config.env.chainId, 'v1');
@@ -38,8 +37,12 @@ async function main() {
     }
   );
 
-  logger.info('process', 'Starting matching engine');
-  await matchingEngine.run();
+  const order = listing;
+  await orderbook.add({ order: order, status: 'active' });
+
+  await matchingEngine.add(order.params);
+  logger.log('process', 'order added');
+  process.exit(1);
 }
 
 void main();

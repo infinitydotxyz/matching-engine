@@ -5,11 +5,11 @@ import { ChainId } from '@infinityxyz/lib/types/core';
 
 import { logger } from '@/common/logger';
 
-import { JobData, MatchingEngineOptions } from './types';
+import { MatchingEngineOptions, WithTiming } from './types';
 
-export abstract class AbstractMatchingEngine<T extends { id: string }, JobResult> {
-  protected _worker: Worker<JobData<T>, JobResult>;
-  protected _queue: Queue<JobData<T>, JobResult>;
+export abstract class AbstractMatchingEngine<T extends { id: string }, U> {
+  protected _worker: Worker<T, WithTiming<U>>;
+  protected _queue: Queue<T, WithTiming<U>>;
 
   constructor(
     protected _db: Redis,
@@ -37,7 +37,7 @@ export abstract class AbstractMatchingEngine<T extends { id: string }, JobResult
       }
     });
 
-    this._worker = new Worker<JobData<T>, JobResult>(this.queueName, this.processOrder.bind(this), {
+    this._worker = new Worker<T, WithTiming<U>>(this.queueName, this._processOrder.bind(this), {
       connection: this._db.duplicate(),
       concurrency: options?.concurrency ?? 1,
       autorun: false,
@@ -47,8 +47,8 @@ export abstract class AbstractMatchingEngine<T extends { id: string }, JobResult
     this._registerListeners(options?.debug);
   }
 
-  abstract processOrder(job: Job<T, JobResult>): Promise<JobResult>;
-  abstract add(job: T): Promise<void>;
+  abstract processOrder(job: Job<T, U>): Promise<U>;
+  abstract add(jobs: T | T[]): Promise<void>;
 
   public async run() {
     if (!this._worker.isRunning()) {
@@ -68,22 +68,19 @@ export abstract class AbstractMatchingEngine<T extends { id: string }, JobResult
     }
   }
 
-  protected async _processOrder(job: Job<JobData<T>, JobResult>): Promise<JobResult> {
+  protected async _processOrder(job: Job<T, WithTiming<U>>): Promise<WithTiming<U>> {
     const start = Date.now();
-    const data = job.data;
     const result = await this.processOrder(job);
     const end = Date.now();
 
-    job.data = {
-      ...data,
+    return {
+      ...result,
       timing: {
         created: job.timestamp,
         started: start,
         completed: end
       }
     };
-
-    return result;
   }
 
   protected _registerListeners(verbose = false) {
@@ -98,12 +95,12 @@ export abstract class AbstractMatchingEngine<T extends { id: string }, JobResult
       this._worker.on('progress', (job) => {
         logger.info(this.queueName, `job ${job.id} - progress ${job.progress}`);
       });
-      this._worker.on('completed', (job) => {
+      this._worker.on('completed', (job, result) => {
         logger.info(
           this.queueName,
           `job ${job.id} - completed. Matching Duration: ${
-            job.data.timing.completed - job.data.timing.started
-          }ms Lifecycle Duration: ${job.data.timing.completed - job.data.timing.created}ms`
+            result.timing.completed - result.timing.started
+          }ms Lifecycle Duration: ${result.timing.completed - result.timing.created}ms`
         );
       });
       this._worker.on('failed', (job, err) => {
