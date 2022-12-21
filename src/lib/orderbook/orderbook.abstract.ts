@@ -4,12 +4,10 @@ import { AbstractOrderbookStorage } from './orderbook-storage.abstract';
 /**
  * An orderbook is responsible for
  * 1. receiving orders from clients
- *  * Validating the orders
  *  * Ensuring the order is compatible
  *  * Saving the order
  *
  * 2. receiving order status updates from clients
- *  * Validating the order status update
  *  * Updating the status of the order
  */
 export type OrderValidationResponse = { isValid: true } | { isValid: false; error: OrderbookOrderError };

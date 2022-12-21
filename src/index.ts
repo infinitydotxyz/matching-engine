@@ -25,18 +25,11 @@ async function main() {
     orderItemStorage
   );
   const orderbook = new OrderbookV1.Orderbook(storage);
-  const matchingEngine = new MatchingEngine(
-    redis,
-    config.env.chainId,
-    orderbook,
-    orderItemStorage,
-    orderStatusStorage,
-    {
-      debug: config.env.debug,
-      concurrency: 1,
-      enableMetrics: false
-    }
-  );
+  const matchingEngine = new MatchingEngine(redis, config.env.chainId, orderItemStorage, orderStatusStorage, {
+    debug: config.env.debug,
+    concurrency: 1,
+    enableMetrics: false
+  });
 
   logger.info('process', 'Starting matching engine');
   await matchingEngine.run();

@@ -1,11 +1,5 @@
 import { MetricsOptions } from 'bullmq';
 
-export interface MatchingEngineOptions {
-  enableMetrics?: boolean | MetricsOptions;
-  concurrency?: number;
-  debug?: boolean;
-}
-
 export type WithTiming<T> = T & {
   timing: {
     created: number;
@@ -13,3 +7,9 @@ export type WithTiming<T> = T & {
     completed: number;
   };
 };
+
+export interface ProcessOptions {
+  enableMetrics?: boolean | MetricsOptions;
+  concurrency?: number;
+  debug?: boolean;
+}

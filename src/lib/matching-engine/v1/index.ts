@@ -5,9 +5,9 @@ import { ChainId } from '@infinityxyz/lib/types/core';
 
 import { logger } from '@/common/logger';
 import { OrderbookV1 as OB } from '@/lib/orderbook';
+import { ProcessOptions } from '@/lib/process/types';
 
 import { AbstractMatchingEngine } from '../matching-engine.abstract';
-import { MatchingEngineOptions } from '../types';
 
 export type MatchingEngineResult = {
   id: string;
@@ -20,17 +20,16 @@ export class MatchingEngine extends AbstractMatchingEngine<OB.Types.OrderParams,
   constructor(
     _db: Redis,
     _chainId: ChainId,
-    protected _orderbook: OB.Orderbook,
     protected _orderItemStorage: OB.OrderItemStorage,
     protected _orderStatusStorage: OB.OrderStatusStorage,
-    options?: MatchingEngineOptions | undefined
+    options?: ProcessOptions | undefined
   ) {
     const version = 'v1';
-    super(_db, _chainId, `matching-engine:${version}`, options);
+    super(_chainId, _db, `matching-engine:${version}`, options);
     this.version = version;
   }
 
-  async processOrder(job: Job<OB.Types.OrderParams, unknown, string>): Promise<MatchingEngineResult> {
+  async processJob(job: Job<OB.Types.OrderParams, unknown, string>): Promise<MatchingEngineResult> {
     const order = new OB.Order(job.data);
     const matches = await this.matchOrder(order);
 

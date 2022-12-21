@@ -25,7 +25,7 @@ describe('Matching Engine V1 - Match Token Listing', () => {
     );
 
     orderbook = new OrderbookV1.Orderbook(storage);
-    matchingEngine = new MatchingEngine(redis, ChainId.Mainnet, orderbook, orderItemStorage, orderStatusStorage);
+    matchingEngine = new MatchingEngine(redis, ChainId.Mainnet, orderItemStorage, orderStatusStorage);
   });
 
   it('should work lol', async () => {

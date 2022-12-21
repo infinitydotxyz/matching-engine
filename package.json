@@ -15,16 +15,19 @@
     "update:lib": "npm install @infinityxyz/lib@latest",
     "pre:push": "npm run format && npm run lint && npm run build",
     "test": "jest",
-    "create-order": "ts-node -r dotenv/config ./src/scripts/create-order.ts"
+    "create-order": "ts-node -r dotenv/config ./src/scripts/create-order.ts",
+    "order-relay": "ts-node -r dotenv/config ./src/scripts/order-relay.ts"
   },
   "dependencies": {
-    "@infinityxyz/lib": "^1.273.1",
+    "@infinityxyz/lib": "^1.274.1",
     "bullmq": "^3.4.1",
     "dotenv": "^16.0.1",
     "ethers": "^5.6.6",
+    "firebase-admin": "^11.4.0",
     "ioredis": "^5.2.4",
     "module-alias": "^2.2.2",
     "nanoid": "^3.3.4",
+    "redlock": "^5.0.0-beta.2",
     "winston": "^3.8.2"
   },
   "devDependencies": {
