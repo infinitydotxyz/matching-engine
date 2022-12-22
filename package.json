@@ -14,9 +14,7 @@
     "start:prod": "npm run build && npm run start",
     "update:lib": "npm install @infinityxyz/lib@latest",
     "pre:push": "npm run format && npm run lint && npm run build",
-    "test": "jest",
-    "create-order": "ts-node -r dotenv/config ./src/scripts/create-order.ts",
-    "order-relay": "ts-node -r dotenv/config ./src/scripts/order-relay.ts"
+    "test": "jest"
   },
   "dependencies": {
     "@infinityxyz/lib": "^1.274.1",

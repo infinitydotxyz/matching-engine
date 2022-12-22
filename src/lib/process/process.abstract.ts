@@ -98,55 +98,56 @@ export abstract class AbstractProcess<T extends { id: string }, U> extends Event
     this._worker.on('error', (err) => {
       logger.error(this.queueName, err.message);
     });
+    const queueName = this.queueName.padEnd(20, ' ');
 
     if (verbose) {
       this._worker.on('active', (job) => {
-        logger.info(this.queueName, `job ${job.id} - activated`);
+        logger.info(this.queueName, `${queueName} job ${job.id} - activated`);
       });
       this._worker.on('progress', (job) => {
-        logger.info(this.queueName, `job ${job.id} - progress ${job.progress}`);
+        logger.info(this.queueName, `${queueName} job ${job.id} - progress ${job.progress}`);
       });
       this._worker.on('completed', (job, result) => {
         logger.info(
           this.queueName,
-          `job ${job.id} - completed. Process Duration: ${
+          `${queueName} job ${job.id} - completed. Process Duration: ${
             result.timing.completed - result.timing.started
           }ms Lifecycle Duration: ${result.timing.completed - result.timing.created}ms`
         );
       });
       this._worker.on('failed', (job, err) => {
-        logger.warn(this.queueName, `job ${job?.data.id} - failed ${err.message}`);
+        logger.warn(this.queueName, `${queueName} job ${job?.data.id} - failed ${err.message}`);
       });
 
       this._worker.on('stalled', (jobId) => {
-        logger.info(this.queueName, `job: ${jobId} - stalled`);
+        logger.info(this.queueName, `${queueName} job: ${jobId} - stalled`);
       });
 
       this._worker.on('closing', () => {
-        logger.info(this.queueName, 'worker - closing');
+        logger.info(this.queueName, `${queueName} worker - closing`);
       });
       this._worker.on('closed', () => {
-        logger.info(this.queueName, 'worker - closed');
+        logger.info(this.queueName, `${queueName} worker - closed`);
       });
 
       this._worker.on('drained', () => {
-        logger.info(this.queueName, 'worker - drained');
+        logger.info(this.queueName, `${queueName} worker - drained`);
       });
 
       this._worker.on('ioredis:close', () => {
-        logger.info(this.queueName, 'ioredis - closed');
+        logger.info(this.queueName, `${queueName} ioredis - closed`);
       });
 
       this._worker.on('paused', () => {
-        logger.info(this.queueName, 'worker - paused');
+        logger.info(this.queueName, `${queueName} worker - paused`);
       });
 
       this._worker.on('ready', () => {
-        logger.info(this.queueName, 'worker - ready');
+        logger.info(this.queueName, `${queueName} worker - ready`);
       });
 
       this._worker.on('resumed', () => {
-        logger.info(this.queueName, 'worker - resumed');
+        logger.info(this.queueName, `${queueName} worker - resumed`);
       });
     }
   }

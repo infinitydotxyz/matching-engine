@@ -1,79 +1,163 @@
-import Redis from 'ioredis';
+import { Redis } from 'ioredis';
 
 import { ChainId } from '@infinityxyz/lib/types/core';
 
 import { AbstractOrderbookStorage } from '../orderbook-storage.abstract';
-import { MinOrderStorage } from './min-order-storage';
 import { Order } from './order';
-import { OrderItemStorage } from './order-item-storage';
-import { OrderStatusStorage } from './order-status-storage';
-import { RawOrderStorage } from './raw-order-storage';
 import { Status } from './types';
 
-/**
- * Responsible for storing orders and their statuses
- *
- */
 export class OrderbookStorage extends AbstractOrderbookStorage<Order, Status> {
   public readonly version = 'v1';
 
-  constructor(
-    protected _db: Redis,
-    protected _chainId: ChainId,
-    protected _minOrderStorage: MinOrderStorage,
-    protected _rawOrderStorage: RawOrderStorage,
-    protected _orderStatusStorage: OrderStatusStorage,
-    protected _orderItemStorage: OrderItemStorage
-  ) {
-    super();
+  getOrderMatchesOrderedSet(orderId: string) {
+    return `orderbook:${this.version}:chain:${this._chainId}:order-matches:${orderId}`;
+  }
+
+  get storedOrdersSetKey() {
+    return `orderbook:${this.version}:chain:${this._chainId}:orders`;
+  }
+
+  get activeOrdersOrderedSetKey() {
+    return `orderbook:${this.version}:chain:${this._chainId}:order-status:active`;
   }
 
   getOrderId(order: Order): string {
     return order.id;
   }
 
-  async get(orderId: string): Promise<Order | null> {
-    return await this._rawOrderStorage.get(orderId);
+  getTokenListingsSet(constraints: { complication: string; currency: string; collection: string; tokenId: string }) {
+    const scope = 'token-orders';
+    const side = 'sell';
+
+    return `scope:${scope}:complication:${constraints.complication}:currency:${constraints.currency}:side:${side}:collection:${constraints.collection}:tokenId:${constraints.tokenId}`;
+  }
+
+  getTokenOffersSet(constraints: { complication: string; currency: string; collection: string; tokenId: string }) {
+    const scope = 'token-orders';
+    const side = 'buy';
+    return `scope:${scope}:complication:${constraints.complication}:currency:${constraints.currency}:side:${side}:collection:${constraints.collection}:tokenId:${constraints.tokenId}`;
+  }
+
+  getCollectionTokenListingsSet(constraints: { complication: string; currency: string; collection: string }) {
+    const scope = 'collection-token-orders';
+    const side = 'sell';
+
+    return `scope:${scope}:complication:${constraints.complication}:currency:${constraints.currency}:side:${side}:collection:${constraints.collection}`;
+  }
+
+  getCollectionTokenOffersSet(constraints: {
+    complication: string;
+    currency: string;
+    collection: string;
+    tokenId: string;
+  }) {
+    const scope = 'collection-token-orders';
+    const side = 'buy';
+
+    return `scope:${scope}:complication:${constraints.complication}:currency:${constraints.currency}:side:${side}:collection:${constraints.collection}`;
+  }
+
+  getCollectionWideOffersSet(constraints: { complication: string; currency: string; collection: string }) {
+    const scope = 'collection-wide-orders';
+    const side = 'buy';
+    return `scope:${scope}:complication:${constraints.complication}:currency:${constraints.currency}:side:${side}:collection:${constraints.collection}`;
+  }
+
+  constructor(protected _db: Redis, protected _chainId: ChainId) {
+    super();
   }
 
   async has(orderId: string): Promise<boolean> {
-    return await this._minOrderStorage.has(orderId);
+    const result = await this._db.sismember(this.storedOrdersSetKey, orderId);
+    return result === 1;
   }
 
-  async save(items: { order: Order; status: Status } | { order: Order; status: Status }[]): Promise<void> {
-    const arr = Array.isArray(items) ? items : [items];
-    for (const { order, status } of arr) {
-      await this._rawOrderStorage.set(order);
-      await this._minOrderStorage.set({
-        id: order.id,
-        chainId: this._chainId,
-        status,
-        side: order.params.side
-      });
-      await this._orderStatusStorage.setOrderStatus(order.id, status);
-      await this._orderItemStorage.set(order);
-    } // TODO optimize with pipelining
+  async save(_items: { order: Order; status: Status } | { order: Order; status: Status }[]): Promise<void> {
+    const items = Array.isArray(_items) ? _items : [_items];
+
+    let txn = this._db.multi();
+
+    for (const item of items) {
+      const orderItemSets = this._getOrderItemSets(item.order);
+      if (item.status === 'active') {
+        txn = txn.sadd(this.storedOrdersSetKey, item.order.id).zadd(this.activeOrdersOrderedSetKey, -1, item.order.id);
+
+        for (const set of orderItemSets.sets) {
+          txn = txn.zadd(set, orderItemSets.orderScore, item.order.id);
+        }
+      } else {
+        txn = txn.srem(this.storedOrdersSetKey, item.order.id).zrem(this.activeOrdersOrderedSetKey, item.order.id);
+
+        for (const set of orderItemSets.sets) {
+          txn = txn.zrem(set, item.order.id);
+        }
+
+        // delete the order matches for this order
+        // execution engine will handle removing invalid matches from other orders
+        const orderMatches = this.getOrderMatchesOrderedSet(item.order.id);
+        txn = txn.del(orderMatches);
+      }
+    }
+    await txn.exec();
   }
 
-  async getStatus(orderId: string): Promise<Status | null> {
-    const minOrder = await this._minOrderStorage.get(orderId);
-    if (minOrder) {
-      return minOrder.status;
+  protected _getOrderItemSets(order: Order) {
+    const orderItem = order.getOrderItem();
+
+    const sets: string[] = [];
+
+    switch (`${order.params.side}:${'tokenId' in orderItem ? 'token' : 'collection'}`) {
+      case 'buy:token': {
+        const tokenId = (orderItem as { collection: string; tokenId: string }).tokenId;
+        const tokenOffers = this.getTokenOffersSet({
+          complication: order.params.complication,
+          currency: order.params.currency,
+          collection: orderItem.collection,
+          tokenId
+        });
+        const tokenCollectionOffers = this.getCollectionTokenOffersSet({
+          complication: order.params.complication,
+          currency: order.params.currency,
+          collection: orderItem.collection,
+          tokenId
+        });
+
+        sets.push(tokenOffers, tokenCollectionOffers);
+        break;
+      }
+      case 'buy:collection': {
+        const collectionWideOffers = this.getCollectionWideOffersSet({
+          complication: order.params.complication,
+          currency: order.params.currency,
+          collection: orderItem.collection
+        });
+        sets.push(collectionWideOffers);
+        break;
+      }
+      case 'sell:token': {
+        const tokenId = (orderItem as { collection: string; tokenId: string }).tokenId;
+
+        const tokenSells = this.getTokenListingsSet({
+          complication: order.params.complication,
+          currency: order.params.currency,
+          collection: orderItem.collection,
+          tokenId
+        });
+        const tokenCollectionSells = this.getCollectionTokenListingsSet({
+          complication: order.params.complication,
+          currency: order.params.currency,
+          collection: orderItem.collection
+        });
+        sets.push(tokenSells, tokenCollectionSells);
+        break;
+      }
+      case 'sell:collection': {
+        throw new Error('Unsupported order side');
+      }
     }
 
-    return null;
-  }
+    const orderScore = order.params.startPriceEth;
 
-  async setStatus(orderId: string, status: Status): Promise<void> {
-    await this._minOrderStorage.setStatus(orderId, status);
-    await this._orderStatusStorage.setOrderStatus(orderId, status);
-  }
-
-  async getSize(): Promise<number> {
-    return await this._minOrderStorage.size();
-  }
-
-  async getSizeByStatus(status: Status): Promise<number> {
-    return await this._orderStatusStorage.getSizeByStatus(status);
+    return { sets, orderScore };
   }
 }

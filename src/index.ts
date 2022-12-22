@@ -1,8 +1,9 @@
 import { config } from '@/config';
 
-import { redis } from './common/db';
+import { firestore, redis, redlock, storage } from './common/db';
 import { logger } from './common/logger';
 import { MatchingEngine } from './lib/matching-engine/v1';
+import { OrderRelay } from './lib/order-relay/v1/order-relay';
 import { OrderbookV1 } from './lib/orderbook';
 
 process.on('unhandledRejection', (error) => {
@@ -12,27 +13,27 @@ process.on('unhandledRejection', (error) => {
 logger.info('process', `Starting server with config: ${config.env.mode}`);
 
 async function main() {
-  const minOrderStorage = new OrderbookV1.MinOrderStorage(redis, config.env.chainId, 'v1');
-  const rawOrderStorage = new OrderbookV1.RawOrderStorage(redis, config.env.chainId, 'v1');
-  const orderStatusStorage = new OrderbookV1.OrderStatusStorage(redis, config.env.chainId, 'v1');
-  const orderItemStorage = new OrderbookV1.OrderItemStorage(redis, config.env.chainId, 'v1');
-  const storage = new OrderbookV1.OrderbookStorage(
-    redis,
-    config.env.chainId,
-    minOrderStorage,
-    rawOrderStorage,
-    orderStatusStorage,
-    orderItemStorage
-  );
-  const orderbook = new OrderbookV1.Orderbook(storage);
-  const matchingEngine = new MatchingEngine(redis, config.env.chainId, orderItemStorage, orderStatusStorage, {
+  const orderbookStorage = new OrderbookV1.OrderbookStorage(redis, config.env.chainId);
+  const orderbook = new OrderbookV1.Orderbook(orderbookStorage);
+  const matchingEngine = new MatchingEngine(redis, config.env.chainId, orderbookStorage, {
+    debug: config.env.debug,
+    concurrency: 1,
+    enableMetrics: false
+  });
+
+  const orderRelay = new OrderRelay(matchingEngine, firestore, storage, redlock, orderbook, redis, {
     debug: config.env.debug,
     concurrency: 1,
     enableMetrics: false
   });
 
   logger.info('process', 'Starting matching engine');
-  await matchingEngine.run();
+  const matchingEnginePromise = matchingEngine.run();
+
+  logger.info('process', 'Starting order relay');
+  const orderRelayPromise = orderRelay.run();
+
+  await Promise.all([matchingEnginePromise, orderRelayPromise]);
 }
 
 void main();

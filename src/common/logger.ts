@@ -1,5 +1,3 @@
-import { Console } from 'node:console';
-import { Transform } from 'node:stream';
 import { Logger, LoggerOptions, createLogger, format, transports } from 'winston';
 
 const log = (level: 'error' | 'info' | 'warn') => {

@@ -25,24 +25,7 @@ export abstract class AbstractOrderbook<T, U> {
     }
   }
 
-  async add(items: { order: T; status: U } | { order: T; status: U }[]): Promise<void> {
-    if (Array.isArray(items)) {
-      for (const { order } of items) {
-        await this.checkOrder(order);
-      }
-    } else {
-      await this.checkOrder(items.order);
-    }
-
+  async save(items: { order: T; status: U } | { order: T; status: U }[]): Promise<void> {
     await this._storage.save(items);
-  }
-
-  async setStatus(orderId: string, status: U): Promise<void> {
-    const orderExists = await this._storage.has(orderId);
-    if (!orderExists) {
-      throw new OrderbookOrderError(orderId, ErrorCode.OrderDoesNotExist, `Order ${orderId} does not exist`);
-    }
-
-    await this._storage.setStatus(orderId, status);
   }
 }

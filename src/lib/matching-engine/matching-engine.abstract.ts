@@ -1,4 +1,4 @@
-import { Job, MetricsTime, Queue, Worker } from 'bullmq';
+import { Job } from 'bullmq';
 import Redis from 'ioredis';
 
 import { ChainId } from '@infinityxyz/lib/types/core';

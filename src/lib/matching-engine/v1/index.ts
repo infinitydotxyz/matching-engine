@@ -1,9 +1,9 @@
-import { BulkJobOptions, Job, Worker } from 'bullmq';
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import { BulkJobOptions, Job } from 'bullmq';
 import { Redis } from 'ioredis';
 
 import { ChainId } from '@infinityxyz/lib/types/core';
 
-import { logger } from '@/common/logger';
 import { OrderbookV1 as OB } from '@/lib/orderbook';
 import { ProcessOptions } from '@/lib/process/types';
 
@@ -11,17 +11,24 @@ import { AbstractMatchingEngine } from '../matching-engine.abstract';
 
 export type MatchingEngineResult = {
   id: string;
-  bestMatch: string | null;
+  matches: { id: string; value: number }[];
 };
 
-export class MatchingEngine extends AbstractMatchingEngine<OB.Types.OrderParams, MatchingEngineResult> {
+export type MatchingEngineJob = { id: string; order: OB.Types.OrderParams };
+
+export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, MatchingEngineResult> {
   public readonly version: string;
+
+  protected _MATCH_LIMIT = 50;
+
+  public getOrderMatchesOrderedSetKey(orderId: string) {
+    return `matching-engine:${this.version}:chain:${this._chainId}:order-matches:${orderId}`;
+  }
 
   constructor(
     _db: Redis,
     _chainId: ChainId,
-    protected _orderItemStorage: OB.OrderItemStorage,
-    protected _orderStatusStorage: OB.OrderStatusStorage,
+    protected _storage: OB.OrderbookStorage,
     options?: ProcessOptions | undefined
   ) {
     const version = 'v1';
@@ -29,29 +36,39 @@ export class MatchingEngine extends AbstractMatchingEngine<OB.Types.OrderParams,
     this.version = version;
   }
 
-  async processJob(job: Job<OB.Types.OrderParams, unknown, string>): Promise<MatchingEngineResult> {
-    const order = new OB.Order(job.data);
+  async processJob(job: Job<MatchingEngineJob>): Promise<MatchingEngineResult> {
+    const order = new OB.Order(job.data.order);
     const matches = await this.matchOrder(order);
 
-    const bestMatch = matches[0];
-    if (!bestMatch) {
-      return {
-        id: order.id,
-        bestMatch: null
-      };
+    const orderId = order.id;
+
+    if (matches.length > 0) {
+      let pipeline = this._db.pipeline();
+      for (const match of matches) {
+        // TODO note the race condition here with an order getting deleted
+        pipeline = pipeline
+          .zadd(this._storage.getOrderMatchesOrderedSet(orderId), match.value, match.id)
+          .zadd(this._storage.getOrderMatchesOrderedSet(match.id), match.value, orderId);
+      }
+      await pipeline.exec();
+      // TODO submit to execution engine
+
+      // execution engine should take an order id to begin executing
+      // build corresponding orders
+      // attempt to execute them
     }
 
     return {
-      id: job.data.id,
-      bestMatch: bestMatch.id
+      id: orderId,
+      matches
     };
   }
 
-  async add(orders: OB.Types.OrderParams | OB.Types.OrderParams[]): Promise<void> {
-    const arr = Array.isArray(orders) ? orders : [orders];
+  async add(job: MatchingEngineJob | MatchingEngineJob[]): Promise<void> {
+    const arr = Array.isArray(job) ? job : [job];
     const jobs: {
       name: string;
-      data: OB.Types.OrderParams;
+      data: MatchingEngineJob;
       opts?: BulkJobOptions | undefined;
     }[] = arr.map((item) => {
       return {
@@ -82,21 +99,21 @@ export class MatchingEngine extends AbstractMatchingEngine<OB.Types.OrderParams,
   }
 
   async matchTokenOffer(order: OB.Order, item: { collection: string; tokenId: string }) {
-    const tokenListingSet = this._orderItemStorage.getTokenListingsSet({
+    const tokenListingSet = this._storage.getTokenListingsSet({
       ...item,
       complication: order.params.complication,
       currency: order.params.currency
     });
 
-    const activeOrdersSet = this._orderStatusStorage.getStatusSetKey('active');
+    const activeOrdersSet = this._storage.activeOrdersOrderedSetKey;
 
-    const orderMatches = `matching-engine:${this.version}:chain:${this._chainId}:order-matches:${order.id}`;
+    const orderMatches = this.getOrderMatchesOrderedSetKey(order.id);
 
     const matches = await new Promise<{ id: string; value: number }[]>((resolve, reject) => {
       this._db
         .pipeline()
         .zinterstore(orderMatches, 2, tokenListingSet, activeOrdersSet, 'AGGREGATE', 'MAX')
-        .zrange(orderMatches, 0, order.params.startPriceEth, 'BYSCORE', 'LIMIT', 0, 1000, 'WITHSCORES') // TODO what should the limit be?
+        .zrange(orderMatches, 0, order.params.startPriceEth, 'BYSCORE', 'LIMIT', 0, this._MATCH_LIMIT, 'WITHSCORES')
         .del(orderMatches)
         .exec()
         .then((results) => {
@@ -121,27 +138,26 @@ export class MatchingEngine extends AbstractMatchingEngine<OB.Types.OrderParams,
           reject(err);
         });
     });
-
-    // TODO handle pending orders
     return matches;
   }
 
   async matchTokenListing(order: OB.Order, item: { collection: string; tokenId: string }) {
-    const tokenOffersSet = this._orderItemStorage.getTokenOffersSet({
+    const tokenOffersSet = this._storage.getTokenOffersSet({
       ...item,
       complication: order.params.complication,
       currency: order.params.currency
     });
 
-    const collectionOffersSet = this._orderItemStorage.getCollectionWideOffersSet({
+    const collectionOffersSet = this._storage.getCollectionWideOffersSet({
       collection: item.collection,
       complication: order.params.complication,
       currency: order.params.currency
     });
 
-    const activeOrdersSet = this._orderStatusStorage.getStatusSetKey('active');
+    const activeOrdersSet = this._storage.activeOrdersOrderedSetKey;
 
-    const orderMatches = `matching-engine:${this.version}:chain:${this._chainId}:order-matches:${order.id}`;
+    const orderMatches = this.getOrderMatchesOrderedSetKey(order.id);
+
     const activeTokenOffers = `matching-engine:${this.version}:chain:${this._chainId}:tmp:${order.id}:type:active-token-offers`;
     const activeCollectionOffers = `matching-engine:${this.version}:chain:${this._chainId}:tmp:${order.id}:type:active-collection-offers`;
 
@@ -164,7 +180,7 @@ export class MatchingEngine extends AbstractMatchingEngine<OB.Types.OrderParams,
           'REV',
           'LIMIT',
           0,
-          1000,
+          this._MATCH_LIMIT,
           'WITHSCORES'
         )
         .del(orderMatches, activeTokenOffers, activeCollectionOffers)
@@ -192,14 +208,6 @@ export class MatchingEngine extends AbstractMatchingEngine<OB.Types.OrderParams,
             return;
           }
 
-          logger.log(
-            'matching-engine',
-            `Active Token Offers: ${activeTokenOffersResult[1]}
-          Active Collection Offers: ${activeCollectionOffersResult[1]}
-          All Active Orders: ${allActiveOrdersResult[1]}
-          `
-          );
-
           resolve(this.transformResult(orderMatchesResult[1] as (string | number)[]));
           return;
         })
@@ -213,21 +221,21 @@ export class MatchingEngine extends AbstractMatchingEngine<OB.Types.OrderParams,
   }
 
   async matchCollectionOffer(order: OB.Order, item: { collection: string }) {
-    const collectionListingsSet = this._orderItemStorage.getCollectionTokenListingsSet({
+    const collectionListingsSet = this._storage.getCollectionTokenListingsSet({
       ...item,
       complication: order.params.complication,
       currency: order.params.currency
     });
 
-    const activeOrdersSet = this._orderStatusStorage.getStatusSetKey('active');
+    const activeOrdersSet = this._storage.activeOrdersOrderedSetKey;
 
-    const orderMatches = `matching-engine:${this.version}:chain:${this._chainId}:order-matches:${order.id}`;
+    const orderMatches = this.getOrderMatchesOrderedSetKey(order.id);
 
     const matches = await new Promise<{ id: string; value: number }[]>((resolve, reject) => {
       this._db
         .pipeline()
         .zinterstore(orderMatches, 2, collectionListingsSet, activeOrdersSet, 'AGGREGATE', 'MAX')
-        .zrange(orderMatches, 0, order.params.startPriceEth, 'BYSCORE', 'LIMIT', 0, 1000, 'WITHSCORES')
+        .zrange(orderMatches, 0, order.params.startPriceEth, 'BYSCORE', 'LIMIT', 0, this._MATCH_LIMIT, 'WITHSCORES')
         .del(orderMatches)
         .exec()
         .then((results) => {
@@ -253,7 +261,6 @@ export class MatchingEngine extends AbstractMatchingEngine<OB.Types.OrderParams,
         });
     });
 
-    // TODO handle pending orders
     return matches;
   }
 
