@@ -143,12 +143,17 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.Status, Jo
       // failed to find cursor
     }
 
+    const saveCursor = async (cursor: OrderStatusEventSyncCursor) => {
+      syncCursor = cursor;
+      await this._db.set(syncCursorKey, JSON.stringify(cursor));
+    };
+
     /**
      * if we failed to find a cursor, load the most recent snapshot
      */
     if (!syncCursor) {
       ({ syncCursor } = await this._loadSnapshot(signal));
-      await this._db.set(syncCursorKey, JSON.stringify(syncCursor));
+      await saveCursor(syncCursor);
     }
 
     /**
@@ -161,7 +166,7 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.Status, Jo
     this.emit('orderbookSyncing');
     for await (const { syncCursor, numEvents, complete } of iterator) {
       this._checkSignal(signal);
-      await this._db.set(syncCursorKey, JSON.stringify(syncCursor));
+      await saveCursor(syncCursor);
 
       if (!complete) {
         this.emit('orderbookSyncingProgress', {
@@ -185,10 +190,14 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.Status, Jo
     /**
      * maintain the orderbook by processing events as they occur
      */
-    await this._maintainSync(signal, syncCursor);
+    await this._maintainSync(signal, syncCursor, saveCursor);
   }
 
-  protected _maintainSync(signal: RedlockAbortSignal, syncCursor: OrderStatusEventSyncCursor) {
+  protected _maintainSync(
+    signal: RedlockAbortSignal,
+    initialSyncCursor: OrderStatusEventSyncCursor,
+    saveCursor: (cursor: OrderStatusEventSyncCursor) => Promise<void>
+  ) {
     const orderStatusEvents = this._firestore.collectionGroup(
       'orderStatusChanges'
     ) as FirebaseFirestore.CollectionGroup<OrderStatusEvent>;
@@ -198,13 +207,15 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.Status, Jo
       .where('isMostRecent', '==', true)
       .orderBy('timestamp', 'asc')
       .orderBy('id', 'asc')
-      .startAfter(syncCursor.timestamp, syncCursor.eventId);
+      .startAfter(initialSyncCursor.timestamp, initialSyncCursor.eventId);
 
     type Acc = {
       added: FirebaseFirestore.DocumentChange<OrderStatusEvent>[];
       removed: FirebaseFirestore.DocumentChange<OrderStatusEvent>[];
       modified: FirebaseFirestore.DocumentChange<OrderStatusEvent>[];
     };
+
+    const syncCursor = initialSyncCursor;
 
     return new Promise((reject) => {
       orderStatusEventsQuery.onSnapshot(
@@ -250,6 +261,16 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.Status, Jo
           });
 
           await this.add(jobData);
+
+          const lastEvent = snapshot.docs[snapshot.docs.length - 1]?.data?.();
+
+          if (lastEvent) {
+            this._checkSignal(signal);
+            syncCursor.timestamp = lastEvent.timestamp;
+            syncCursor.eventId = lastEvent.id;
+            syncCursor.orderId = lastEvent.orderId;
+            await saveCursor(syncCursor);
+          }
         },
         (err) => {
           // TODO handle this more robustly

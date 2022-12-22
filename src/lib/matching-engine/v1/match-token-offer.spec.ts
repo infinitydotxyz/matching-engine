@@ -1,6 +1,7 @@
 import { ChainId } from '@infinityxyz/lib/types/core';
 
-import { redis } from '@/common/db';
+import { firestore, redis } from '@/common/db';
+import { ExecutionEngine } from '@/lib/execution-engine/v1';
 import { OrderbookV1 } from '@/lib/orderbook';
 
 import { MatchingEngine } from '.';
@@ -12,9 +13,10 @@ describe('Matching Engine V1 - Match Token Offer', () => {
   let orderbook: OrderbookV1.Orderbook;
   beforeAll(() => {
     const storage = new OrderbookV1.OrderbookStorage(redis, chainId);
+    const executionEngine = new ExecutionEngine(storage, firestore, redis);
 
     orderbook = new OrderbookV1.Orderbook(storage);
-    matchingEngine = new MatchingEngine(redis, ChainId.Mainnet, storage);
+    matchingEngine = new MatchingEngine(redis, ChainId.Mainnet, storage, executionEngine);
   });
 
   it('should work lol', async () => {

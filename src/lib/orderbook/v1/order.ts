@@ -103,7 +103,7 @@ export class Order {
       currency: signedOrder.execParams[0],
       complication: signedOrder.execParams[1],
       extraParams: signedOrder.extraParams,
-      isNative: signedOrder.signer === constants.AddressZero,
+      isNative: signedOrder.signer !== constants.AddressZero,
       signedOrder
     };
   }

@@ -4,6 +4,7 @@ import { Redis } from 'ioredis';
 
 import { ChainId } from '@infinityxyz/lib/types/core';
 
+import { ExecutionEngine } from '@/lib/execution-engine/v1';
 import { OrderbookV1 as OB } from '@/lib/orderbook';
 import { ProcessOptions } from '@/lib/process/types';
 
@@ -29,6 +30,7 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
     _db: Redis,
     _chainId: ChainId,
     protected _storage: OB.OrderbookStorage,
+    protected _executionEngine: ExecutionEngine,
     options?: ProcessOptions | undefined
   ) {
     const version = 'v1';
@@ -51,11 +53,10 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
           .zadd(this._storage.getOrderMatchesOrderedSet(match.id), match.value, orderId);
       }
       await pipeline.exec();
-      // TODO submit to execution engine
-
-      // execution engine should take an order id to begin executing
-      // build corresponding orders
-      // attempt to execute them
+      await this._executionEngine.add({
+        id: orderId,
+        order: job.data.order
+      });
     }
 
     return {
