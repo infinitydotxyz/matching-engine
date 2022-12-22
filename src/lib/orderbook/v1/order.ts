@@ -1,5 +1,5 @@
 import { BigNumber, constants } from 'ethers/lib/ethers';
-import { formatEther, parseUnits } from 'ethers/lib/utils';
+import { formatEther, formatUnits } from 'ethers/lib/utils';
 
 import { ChainId, ChainOBOrder } from '@infinityxyz/lib/types/core';
 
@@ -99,7 +99,7 @@ export class Order {
       endTimeMs: constraints[4].toNumber() * 1000,
       nonce: constraints[5].toString(),
       maxTxGasPriceWei: constraints[6].toString(),
-      maxTxGasPriceGwei: parseUnits(constraints[6].toString(), 'gwei').toNumber(),
+      maxTxGasPriceGwei: parseFloat(formatUnits(constraints[6].toString(), 'gwei')),
       currency: signedOrder.execParams[0],
       complication: signedOrder.execParams[1],
       extraParams: signedOrder.extraParams,

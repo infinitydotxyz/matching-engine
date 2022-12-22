@@ -11,29 +11,18 @@ describe('Matching Engine V1 - Match Token Offer', () => {
   let matchingEngine: MatchingEngine;
   let orderbook: OrderbookV1.Orderbook;
   beforeAll(() => {
-    const minOrderStorage = new OrderbookV1.MinOrderStorage(redis, chainId, 'test');
-    const rawOrderStorage = new OrderbookV1.RawOrderStorage(redis, chainId, 'test');
-    const orderStatusStorage = new OrderbookV1.OrderStatusStorage(redis, chainId, 'test');
-    const orderItemStorage = new OrderbookV1.OrderItemStorage(redis, chainId, 'test');
-    const storage = new OrderbookV1.OrderbookStorage(
-      redis,
-      chainId,
-      minOrderStorage,
-      rawOrderStorage,
-      orderStatusStorage,
-      orderItemStorage
-    );
+    const storage = new OrderbookV1.OrderbookStorage(redis, chainId);
 
     orderbook = new OrderbookV1.Orderbook(storage);
-    matchingEngine = new MatchingEngine(redis, ChainId.Mainnet, orderItemStorage, orderStatusStorage);
+    matchingEngine = new MatchingEngine(redis, ChainId.Mainnet, storage);
   });
 
   it('should work lol', async () => {
     const tokenListing = getOrder(chainId, 0.10001, true, 'single-token', { collection: '0x1', tokenId: '1' });
     const tokenOffer = getOrder(chainId, 0.1, false, 'single-token', { collection: '0x1', tokenId: '1' });
 
-    await orderbook.add({ order: tokenListing, status: 'active' });
-    await orderbook.add({ order: tokenOffer, status: 'active' });
+    await orderbook.save({ order: tokenListing, status: 'active' });
+    await orderbook.save({ order: tokenOffer, status: 'active' });
 
     const result = await matchingEngine.matchOrder(tokenOffer);
     console.log(result);

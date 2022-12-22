@@ -4,7 +4,7 @@ import { Redis } from 'ioredis';
 import * as ReadLine from 'readline';
 import Redlock, { ExecutionError, RedlockAbortSignal } from 'redlock';
 
-import { ChainId, ChainOBOrder, OrderStatusEvent, RawOrderWithoutError } from '@infinityxyz/lib/types/core';
+import { ChainId, ChainOBOrder, OrderStatusEvent } from '@infinityxyz/lib/types/core';
 
 import { logger } from '@/common/logger';
 import { config } from '@/config';
@@ -35,9 +35,14 @@ export interface JobData {
   status: Status;
 }
 
-type JobResult = unknown;
+type JobResult = WithTiming<{
+  id: string;
+  successful: boolean;
+}>;
 
 export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.Status, JobData, JobResult> {
+  protected _version = 'v1';
+
   constructor(
     protected _matchingEngine: MatchingEngine,
     protected _firestore: FirebaseFirestore.Firestore,
@@ -45,24 +50,41 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.Status, Jo
     protected _redlock: Redlock,
     orderbook: OB.Orderbook,
     db: Redis,
-    queueName: string,
     options?: Partial<ProcessOptions>
   ) {
-    super(orderbook, db, queueName, options);
+    const version = 'v1';
+    super(orderbook, db, `order-relay:${version}`, options);
+    this._version = version;
   }
 
-  processJob(job: Job<JobData, JobResult, string>): Promise<JobResult> {
-    /**
-     * take an order change
-     * 1. Update orderbook with order (create/change status/delete)
-     * 2. 'active' => submit to matching engine to process
-     * 3. non-'active' => remove from matching engine queue, remove from execution queue
-     *
-     * active => save to orderbook + submit to matching engine
-     * non-active => remove from orderbook + remove from matching engine
-     */
+  async processJob(job: Job<JobData, JobResult, string>): Promise<JobResult> {
+    const start = Date.now();
+    const orderParams = Order.getOrderParams(job.data.id, config.env.chainId, job.data.order);
+    const order = new Order(orderParams);
+    let successful;
+    try {
+      await this._orderbook.checkOrder(order);
+      await this._orderbook.save({ order, status: job.data.status });
+      if (job.data.status === 'active') {
+        await this._matchingEngine.add({
+          id: job.data.id,
+          order: orderParams
+        });
+      }
+      successful = true;
+    } catch (err) {
+      successful = false;
+    }
 
-    return Promise.resolve();
+    return {
+      id: job.data.id,
+      successful,
+      timing: {
+        created: job.timestamp,
+        started: start,
+        completed: Date.now()
+      }
+    };
   }
 
   public async run() {
