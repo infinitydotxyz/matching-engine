@@ -23,10 +23,19 @@ export type MatchingEngineResult = {
 
 export type MatchingEngineJob = { id: string; order: OB.Types.OrderParams };
 
+export interface Match {
+  matchId: string;
+  maxGasPriceGwei: number;
+  arbitrageWei: string;
+  isNative: boolean;
+  offer: OrderData;
+  listing: OrderData;
+}
+
 export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, MatchingEngineResult> {
   public readonly version: string;
 
-  protected _MATCH_LIMIT = 50;
+  protected _MATCH_LIMIT = 10;
 
   /**
    * temporary storage for order matches
@@ -53,7 +62,8 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
     const validMatches = await this.processMatches(order, matches);
     const orderId = order.id;
 
-    if (matches.length > 0) {
+    if (validMatches.length > 0) {
+      logger.log('matching-engine', `found ${validMatches.length} valid matches for order ${order.id}`);
       const pipeline = this._db.pipeline();
 
       type DbMatch = {
@@ -93,10 +103,12 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
 
       for (const match of validMatches) {
         const matchKey = this._storage.getFullMatchKey(match.matchId);
-        pipeline.zadd(this._storage.matchesByGasPriceOrderedSetKey, match.matchId, match.maxGasPriceGwei);
-        pipeline.sadd(matchKey, JSON.stringify(match));
+        pipeline.zadd(this._storage.matchesByGasPriceOrderedSetKey, match.maxGasPriceGwei, match.matchId);
+        pipeline.set(matchKey, JSON.stringify(match));
         // TODO how do we clean this up
       }
+
+      await pipeline.exec();
     }
 
     return {
@@ -354,13 +366,7 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
       };
     });
 
-    const validMatches: {
-      matchId: string;
-      maxGasPriceGwei: number;
-      isNative: boolean;
-      offer: OrderData;
-      listing: OrderData;
-    }[] = [];
+    const validMatches: Match[] = [];
     for (const { matchData, fullOrderData: matchOrderData } of matchesWithFullData) {
       if (!matchOrderData) {
         logger.error('matching-engine', `order ${matchData.id} not found`);
@@ -415,7 +421,8 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
           maxGasPriceGwei,
           isNative: executionPrices.isNative,
           offer,
-          listing
+          listing,
+          arbitrageWei: executionPrices.arbitrageWei
         });
       } catch (err) {
         if (err instanceof Error) {
@@ -424,10 +431,6 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
           logger.error('matching-engine', `order ${matchData.id} has error. ${err}`);
         }
       }
-    }
-
-    if (validMatches.length > 0) {
-      logger.log('matching-engine', `found ${validMatches.length} valid matches for order ${order.id}`);
     }
     return validMatches;
   }
