@@ -3,13 +3,11 @@ import { BigNumber } from 'ethers';
 import { formatEther, formatUnits } from 'ethers/lib/utils';
 import Redis from 'ioredis';
 
-import { ChainOBOrder, OrderSource, RawFirestoreOrder } from '@infinityxyz/lib/types/core';
-import { firestoreConstants } from '@infinityxyz/lib/utils/constants';
-
 import { logger } from '@/common/logger';
+import { config } from '@/config';
 import { OrderbookV1 as OB } from '@/lib/orderbook';
 import { Order, OrderbookStorage } from '@/lib/orderbook/v1';
-import { OrderParams } from '@/lib/orderbook/v1/types';
+import { OrderData, OrderParams } from '@/lib/orderbook/v1/types';
 import { AbstractProcess } from '@/lib/process/process.abstract';
 import { ProcessOptions } from '@/lib/process/types';
 
@@ -26,12 +24,7 @@ export type ExecutionEngineResult = unknown;
 export class ExecutionEngine extends AbstractProcess<ExecutionEngineJob, ExecutionEngineResult> {
   protected _version: string;
 
-  constructor(
-    protected _storage: OrderbookStorage,
-    protected _firestore: FirebaseFirestore.Firestore,
-    _db: Redis,
-    options?: ProcessOptions
-  ) {
+  constructor(protected _storage: OrderbookStorage, _db: Redis, options?: ProcessOptions) {
     const version = 'v1';
     super(_db, `execution-engine:${version}`, options);
     this._version = version;
@@ -39,19 +32,25 @@ export class ExecutionEngine extends AbstractProcess<ExecutionEngineJob, Executi
 
   async processJob(job: Job<ExecutionEngineJob, ExecutionEngineResult, string>): Promise<ExecutionEngineResult> {
     const matchesKey = this._storage.getOrderMatchesOrderedSet(job.data.id);
-    const ordersColl = this._firestore.collection(
-      firestoreConstants.ORDERS_V2_COLL
-    ) as FirebaseFirestore.CollectionReference<RawFirestoreOrder>;
+    // const ordersColl = this._firestore.collection(
+    //   firestoreConstants.ORDERS_V2_COLL
+    // ) as FirebaseFirestore.CollectionReference<RawFirestoreOrder>;
 
-    const mainOrderFirestoreOrderSnap = await ordersColl.doc(job.data.id).get();
-    const mainFirestoreOrder = mainOrderFirestoreOrderSnap.data();
-    if (!mainFirestoreOrder || !mainFirestoreOrder.rawOrder || !mainFirestoreOrder.order) {
-      throw new Error('Main order not found');
-    } else if ('error' in mainFirestoreOrder.rawOrder) {
-      throw new Error('Main order has error');
-    } else if (mainFirestoreOrder.order.status !== 'active') {
-      throw new Error('Main order is not active');
+    const mainFullOrderKey = this._storage.getFullOrderKey(job.data.id);
+    const mainFullOrderString = await this._db.get(mainFullOrderKey);
+    let mainOrder: OrderData | null;
+    try {
+      mainOrder = JSON.parse(mainFullOrderString ?? '') as OrderData;
+    } catch (err) {
+      mainOrder = null;
+      // mainOrder not found
     }
+
+    if (!mainOrder) {
+      throw new Error('Main order not found');
+    }
+
+    const mainOrderParams = Order.getOrderParams(mainOrder.id, config.env.chainId, mainOrder.order);
 
     const getPageArgs = (offset = 0, pageSize = 10) => {
       const args =
@@ -85,76 +84,42 @@ export class ExecutionEngine extends AbstractProcess<ExecutionEngineJob, Executi
         hasNextPage = false;
       }
 
-      const matchRefs = matches.map((match) => {
-        return {
-          ...match,
-          ref: ordersColl.doc(match.id)
-        };
-      });
-      const matchesSnap = (await this._firestore.getAll(
-        ...matchRefs.map((match) => match.ref)
-      )) as FirebaseFirestore.DocumentSnapshot<RawFirestoreOrder>[];
+      const matchesStrings = await this._db.mget(matches.map((match) => this._storage.getFullOrderKey(match.id)));
 
-      const matchesWithSnap = matchRefs.map((match, index) => {
+      const matchesWithFullData = matches.map((item, index) => {
+        let orderData: OrderData | null;
+        try {
+          orderData = JSON.parse(matchesStrings[index] ?? '') as OrderData;
+        } catch (err) {
+          orderData = null;
+        }
         return {
-          ...match,
-          snap: matchesSnap[index]
+          fullOrderData: orderData,
+          matchData: item
         };
       });
 
       const validMatches: {
         maxGasPriceGwei: number;
         isNative: boolean;
-        offer: {
-          id: string;
-          isNative: boolean;
-          source: OrderSource;
-          infinityOrder: ChainOBOrder;
-          rawOrder: unknown;
-        };
-        listing: {
-          id: string;
-          isNative: boolean;
-          source: OrderSource;
-          infinityOrder: ChainOBOrder;
-          rawOrder: unknown;
-        };
+        offer: OrderData;
+        listing: OrderData;
       }[] = [];
-      for (const item of matchesWithSnap) {
-        const firestoreOrder = item.snap.data();
-        if (!firestoreOrder) {
-          logger.error('execution-engine', `order ${item.id} not found`);
-          continue;
-        } else if ('error' in firestoreOrder && firestoreOrder.metadata.hasError) {
-          logger.error('execution-engine', `order ${item.id} has error`);
-          continue;
-        } else if (!firestoreOrder.rawOrder) {
-          logger.error('execution-engine', `order ${item.id} has no rawOrder`);
-          continue;
-        } else if (!firestoreOrder.order) {
-          logger.error('execution-engine', `order ${item.id} has no order`);
-          continue;
-        } else if (firestoreOrder.order.status !== 'active') {
-          logger.error('execution-engine', `order ${item.id} is not active`);
-          // TODO remove from matches
-          continue;
-        } else if ('error' in firestoreOrder.rawOrder) {
-          logger.error('execution-engine', `order ${item.id} has error`);
+      for (const { matchData, fullOrderData: matchOrderData } of matchesWithFullData) {
+        if (!matchOrderData) {
+          logger.error('execution-engine', `order ${matchData.id} not found`);
           continue;
         }
 
-        const orderMatchParams = Order.getOrderParams(
-          firestoreOrder.metadata.id,
-          firestoreOrder.metadata.chainId,
-          firestoreOrder.rawOrder.infinityOrder
-        );
+        const orderMatchParams = Order.getOrderParams(matchOrderData.id, config.env.chainId, matchOrderData.order);
 
-        const [offer, listing] = mainFirestoreOrder.order.isSellOrder
-          ? [firestoreOrder.rawOrder, mainFirestoreOrder.rawOrder]
-          : [mainFirestoreOrder.rawOrder, firestoreOrder.rawOrder];
+        const [offer, listing] = mainOrder.order.isSellOrder
+          ? [matchOrderData, mainOrder]
+          : [mainOrder, matchOrderData];
 
-        const [offerParams, listingParams] =
-          job.data.order.side === 'buy' ? [job.data.order, orderMatchParams] : [orderMatchParams, job.data.order];
+        const [offerParams, listingParams] = mainOrder.order.isSellOrder
+          ? [orderMatchParams, mainOrderParams]
+          : [mainOrderParams, orderMatchParams];
 
         try {
           const executionPrices = this._getExecutionCost(offerParams, listingParams);
@@ -184,10 +149,8 @@ export class ExecutionEngine extends AbstractProcess<ExecutionEngineJob, Executi
              */
             const bufferGasUsage = 100_000;
 
-            const sourceGasUsage = job.data.order.isNative
-              ? firestoreOrder.order.gasUsage
-              : mainFirestoreOrder.order.gasUsage;
-            const gasUsage = sourceGasUsage + bufferGasUsage;
+            const sourceGasUsage = mainOrder.source === 'infinity' ? matchOrderData.gasUsage : mainOrder.gasUsage;
+            const gasUsage = parseInt(sourceGasUsage, 10) + bufferGasUsage;
             const maxSourceGasPriceWei = BigNumber.from(executionPrices.arbitrageWei).div(gasUsage);
             const maxSourceGasPriceGwei = parseFloat(formatUnits(maxSourceGasPriceWei, 'gwei'));
             maxGasPriceGwei = Math.min(maxSourceGasPriceGwei, executionPrices.maxGasPriceGwei);
@@ -196,31 +159,20 @@ export class ExecutionEngine extends AbstractProcess<ExecutionEngineJob, Executi
           validMatches.push({
             maxGasPriceGwei,
             isNative: executionPrices.isNative,
-            offer: {
-              id: offer.id,
-              isNative: offer.source === 'infinity',
-              source: offer.source,
-              infinityOrder: offer.infinityOrder,
-              rawOrder: offer.rawOrder
-            },
-            listing: {
-              id: listing.id,
-              isNative: listing.source === 'infinity',
-              source: listing.source,
-              infinityOrder: listing.infinityOrder,
-              rawOrder: listing.rawOrder
-            }
+            offer,
+            listing
           });
         } catch (err) {
           if (err instanceof Error) {
-            logger.error('execution-engine', `order ${item.id} has error. ${err.message}`);
+            logger.error('execution-engine', `order ${matchData.id} has error. ${err.message}`);
           } else {
-            logger.error('execution-engine', `order ${item.id} has error. ${err}`);
+            logger.error('execution-engine', `order ${matchData.id} has error. ${err}`);
           }
         }
       }
 
       if (validMatches.length > 0) {
+        logger.log('execution-engine', `found ${validMatches.length} valid matches for order ${job.data.order.id}`);
         // TODO save these somewhere
         // make sure it is in sync with order status
         return;

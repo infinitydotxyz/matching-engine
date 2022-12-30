@@ -16,7 +16,7 @@ logger.info('process', `Starting server with config: ${config.env.mode}`);
 async function main() {
   const orderbookStorage = new OrderbookV1.OrderbookStorage(redis, config.env.chainId);
   const orderbook = new OrderbookV1.Orderbook(orderbookStorage);
-  const executionEngine = new ExecutionEngine(orderbookStorage, firestore, redis, {
+  const executionEngine = new ExecutionEngine(orderbookStorage, redis, {
     debug: config.env.debug,
     concurrency: 1,
     enableMetrics: false
