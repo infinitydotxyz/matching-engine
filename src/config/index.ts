@@ -32,6 +32,13 @@ export const config = {
     chainId: getEnvVariable('CHAIN_ID', true) as ChainId,
     debug: Number(getEnvVariable('DEBUG', false)) === 1
   },
+  broadcasting: {
+    blockOffset: 2
+  },
+  providers: {
+    websocketUrl: getEnvVariable('WEBSOCKET_PROVIDER_URL', true),
+    httpUrl: getEnvVariable('HTTP_PROVIDER_URL', true)
+  },
   redis: {
     connectionUrl: getEnvVariable('REDIS_URL')
   },

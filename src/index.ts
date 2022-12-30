@@ -1,3 +1,5 @@
+import { ethers } from 'ethers';
+
 import { config } from '@/config';
 
 import { firestore, redis, redlock, storage } from './common/db';
@@ -14,15 +16,26 @@ process.on('unhandledRejection', (error) => {
 logger.info('process', `Starting server with config: ${config.env.mode}`);
 
 async function main() {
+  const network = parseInt(config.env.chainId, 10);
+  const websocketProvider = new ethers.providers.WebSocketProvider(config.providers.websocketUrl, network);
+  const rpcProvider = new ethers.providers.JsonRpcProvider(config.providers.httpUrl, network);
   const orderbookStorage = new OrderbookV1.OrderbookStorage(redis, config.env.chainId);
   const orderbook = new OrderbookV1.Orderbook(orderbookStorage);
-  const executionEngine = new ExecutionEngine(orderbookStorage, redis, {
-    debug: config.env.debug,
-    concurrency: 1,
-    enableMetrics: false
-  });
+  const executionEngine = new ExecutionEngine(
+    orderbookStorage,
+    redis,
+    redlock,
+    websocketProvider,
+    rpcProvider,
+    config.broadcasting.blockOffset,
+    {
+      debug: config.env.debug,
+      concurrency: 20, // ideally this is set high enough that we never max it out
+      enableMetrics: false
+    }
+  );
 
-  const matchingEngine = new MatchingEngine(redis, config.env.chainId, orderbookStorage, executionEngine, {
+  const matchingEngine = new MatchingEngine(redis, config.env.chainId, orderbookStorage, {
     debug: config.env.debug,
     concurrency: 1,
     enableMetrics: false

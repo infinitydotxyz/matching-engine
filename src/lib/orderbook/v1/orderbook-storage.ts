@@ -11,8 +11,26 @@ import { OrderData } from './types';
 export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData> {
   public readonly version = 'v1';
 
-  getOrderMatchesOrderedSet(orderId: string) {
+  /**
+   * a set of all match ids for an order
+   */
+  getOrderMatchesSet(orderId: string) {
     return `orderbook:${this.version}:chain:${this._chainId}:order-matches:${orderId}`;
+  }
+
+  /**
+   * an ordered set of order ids that are
+   * ordered by the matches max gas price
+   */
+  get matchesByGasPriceOrderedSetKey() {
+    return `orderbook:${this.version}:chain:${this._chainId}:order-matches:by-gas-price:`;
+  }
+
+  /**
+   * key value pairs of a match id to a full match
+   */
+  getFullMatchKey(matchId: string) {
+    return `orderbook:${this.version}:chain:${this._chainId}:order-matches:${matchId}:full`;
   }
 
   get storedOrdersSetKey() {
@@ -104,8 +122,8 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
 
         // delete the order matches for this order
         // TODO execution engine will handle removing invalid matches from other orders?
-        const orderMatches = this.getOrderMatchesOrderedSet(item.id);
-        txn = txn.del(orderMatches);
+        // const orderMatches = this.getOrderMatchesOrderedSet(item.id);
+        // txn = txn.del(orderMatches);
       }
     }
     await txn.exec();

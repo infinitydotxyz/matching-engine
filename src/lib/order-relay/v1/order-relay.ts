@@ -87,7 +87,7 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
   }
 
   public async run() {
-    const orderSyncKey = 'order-relay:lock';
+    const orderSyncKey = `order-relay:chain:${config.env.chainId}:lock`;
     const lockDuration = 15_000;
 
     /**
@@ -131,7 +131,7 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
 
   protected async _sync(signal: RedlockAbortSignal) {
     // to begin syncing we need to make sure we are the only instance syncing redis
-    const syncCursorKey = 'order-relay:order-events:sync-cursor';
+    const syncCursorKey = `order-relay:chain:${config.env.chainId}:order-events:sync-cursor`;
     const encodedSyncCursor = await this._db.get(syncCursorKey);
 
     let syncCursor: OrderStatusEventSyncCursor | undefined;
@@ -252,6 +252,7 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
 
           const jobData = eventsByType.added.map((item) => {
             const data = item.doc.data();
+            logger.log('order-relay', `Received order status event for order ${data.orderId}`);
             return {
               id: data.orderId,
               orderData: {
