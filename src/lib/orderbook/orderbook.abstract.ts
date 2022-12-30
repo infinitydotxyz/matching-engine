@@ -12,8 +12,8 @@ import { AbstractOrderbookStorage } from './orderbook-storage.abstract';
  */
 export type OrderValidationResponse = { isValid: true } | { isValid: false; error: OrderbookOrderError };
 
-export abstract class AbstractOrderbook<T, U> {
-  constructor(protected _storage: AbstractOrderbookStorage<T, U>) {}
+export abstract class AbstractOrderbook<T, V> {
+  constructor(protected _storage: AbstractOrderbookStorage<T, V>) {}
 
   abstract isOrderValid(order: T): Promise<OrderValidationResponse> | OrderValidationResponse;
 
@@ -25,7 +25,7 @@ export abstract class AbstractOrderbook<T, U> {
     }
   }
 
-  async save(items: { order: T; status: U } | { order: T; status: U }[]): Promise<void> {
+  async save(items: V | V[]): Promise<void> {
     await this._storage.save(items);
   }
 }

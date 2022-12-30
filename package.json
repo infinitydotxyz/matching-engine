@@ -17,7 +17,7 @@
     "test": "jest"
   },
   "dependencies": {
-    "@infinityxyz/lib": "^1.274.1",
+    "@infinityxyz/lib": "^1.277.0",
     "bullmq": "^3.4.1",
     "dotenv": "^16.0.1",
     "ethers": "^5.6.6",

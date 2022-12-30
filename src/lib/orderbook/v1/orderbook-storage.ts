@@ -2,11 +2,13 @@ import { Redis } from 'ioredis';
 
 import { ChainId } from '@infinityxyz/lib/types/core';
 
+import { config } from '@/config';
+
 import { AbstractOrderbookStorage } from '../orderbook-storage.abstract';
 import { Order } from './order';
-import { Status } from './types';
+import { OrderData } from './types';
 
-export class OrderbookStorage extends AbstractOrderbookStorage<Order, Status> {
+export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData> {
   public readonly version = 'v1';
 
   getOrderMatchesOrderedSet(orderId: string) {
@@ -45,6 +47,10 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, Status> {
     return `scope:${scope}:complication:${constraints.complication}:currency:${constraints.currency}:side:${side}:collection:${constraints.collection}`;
   }
 
+  getFullOrderKey(id: string) {
+    return `orderbook:${this.version}:chain:${this._chainId}:orders:${id}:full`;
+  }
+
   getCollectionTokenOffersSet(constraints: {
     complication: string;
     currency: string;
@@ -72,29 +78,33 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, Status> {
     return result === 1;
   }
 
-  async save(_items: { order: Order; status: Status } | { order: Order; status: Status }[]): Promise<void> {
+  async save(_items: OrderData | OrderData[]): Promise<void> {
     const items = Array.isArray(_items) ? _items : [_items];
 
     let txn = this._db.multi();
 
     for (const item of items) {
-      const orderItemSets = this._getOrderItemSets(item.order);
+      const order = new Order(Order.getOrderParams(item.id, config.env.chainId, item.order));
+      const orderItemSets = this._getOrderItemSets(order);
+      const fullOrder = JSON.stringify(item);
       if (item.status === 'active') {
-        txn = txn.sadd(this.storedOrdersSetKey, item.order.id).zadd(this.activeOrdersOrderedSetKey, -1, item.order.id);
+        txn = txn.sadd(this.storedOrdersSetKey, item.id).zadd(this.activeOrdersOrderedSetKey, -1, item.id);
+        txn = txn.set(this.getFullOrderKey(item.id), fullOrder);
 
         for (const set of orderItemSets.sets) {
-          txn = txn.zadd(set, orderItemSets.orderScore, item.order.id);
+          txn = txn.zadd(set, orderItemSets.orderScore, item.id);
         }
       } else {
-        txn = txn.srem(this.storedOrdersSetKey, item.order.id).zrem(this.activeOrdersOrderedSetKey, item.order.id);
+        txn = txn.srem(this.storedOrdersSetKey, item.id).zrem(this.activeOrdersOrderedSetKey, item.id);
+        txn = txn.del(this.getFullOrderKey(item.id));
 
         for (const set of orderItemSets.sets) {
-          txn = txn.zrem(set, item.order.id);
+          txn = txn.zrem(set, item.id);
         }
 
         // delete the order matches for this order
-        // execution engine will handle removing invalid matches from other orders
-        const orderMatches = this.getOrderMatchesOrderedSet(item.order.id);
+        // TODO execution engine will handle removing invalid matches from other orders?
+        const orderMatches = this.getOrderMatchesOrderedSet(item.id);
         txn = txn.del(orderMatches);
       }
     }

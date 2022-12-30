@@ -4,7 +4,7 @@ import { Redis } from 'ioredis';
 import * as ReadLine from 'readline';
 import Redlock, { ExecutionError, RedlockAbortSignal } from 'redlock';
 
-import { ChainId, ChainOBOrder, OrderStatusEvent } from '@infinityxyz/lib/types/core';
+import { ChainId, OrderStatusEvent } from '@infinityxyz/lib/types/core';
 
 import { logger } from '@/common/logger';
 import { config } from '@/config';
@@ -12,11 +12,10 @@ import { streamQueryWithRef } from '@/lib/firestore';
 import { MatchingEngine } from '@/lib/matching-engine/v1';
 import { OrderbookV1 as OB } from '@/lib/orderbook';
 import { Order } from '@/lib/orderbook/v1';
-import { Status } from '@/lib/orderbook/v1/types';
 import { ProcessOptions, WithTiming } from '@/lib/process/types';
 
 import { AbstractOrderRelay } from '../order-relay.abstract';
-import { OrderStatusEventSyncCursor } from './types';
+import { OrderStatusEventSyncCursor, OrderbookSnapshotOrder } from './types';
 
 export interface SnapshotMetadata {
   bucket: string;
@@ -31,8 +30,7 @@ export interface JobData {
    * the order id
    */
   id: string;
-  order: ChainOBOrder;
-  status: Status;
+  orderData: OB.Types.OrderData;
 }
 
 type JobResult = WithTiming<{
@@ -40,7 +38,7 @@ type JobResult = WithTiming<{
   successful: boolean;
 }>;
 
-export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.Status, JobData, JobResult> {
+export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData, JobData, JobResult> {
   protected _version = 'v1';
 
   constructor(
@@ -59,13 +57,14 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.Status, Jo
 
   async processJob(job: Job<JobData, JobResult, string>): Promise<JobResult> {
     const start = Date.now();
-    const orderParams = Order.getOrderParams(job.data.id, config.env.chainId, job.data.order);
+
+    const orderParams = Order.getOrderParams(job.data.id, config.env.chainId, job.data.orderData.order);
     const order = new Order(orderParams);
     let successful;
     try {
       await this._orderbook.checkOrder(order);
-      await this._orderbook.save({ order, status: job.data.status });
-      if (job.data.status === 'active') {
+      await this._orderbook.save(job.data.orderData);
+      if (job.data.orderData.status === 'active') {
         await this._matchingEngine.add({
           id: job.data.id,
           order: orderParams
@@ -255,8 +254,14 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.Status, Jo
             const data = item.doc.data();
             return {
               id: data.orderId,
-              order: data.order,
-              status: data.status
+              orderData: {
+                id: data.orderId,
+                order: data.order,
+                status: data.status,
+                source: data.source,
+                sourceOrder: data.sourceOrder,
+                gasUsage: data.gasUsage
+              }
             };
           });
 
@@ -321,7 +326,17 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.Status, Jo
     let numEvents = 0;
     for await (const { data } of stream) {
       this._checkSignal(signal);
-      await this.add({ id: data.orderId, order: data.order, status: data.status });
+      await this.add({
+        id: data.orderId,
+        orderData: {
+          id: data.orderId,
+          order: data.order,
+          status: data.status,
+          source: data.source,
+          sourceOrder: data.sourceOrder,
+          gasUsage: data.gasUsage
+        }
+      });
 
       numEvents += 1;
       if (numEvents % 300 === 0) {
@@ -344,7 +359,14 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.Status, Jo
     let numOrders = 0;
     for await (const item of orderIterator) {
       // the snapshot is assumed to contain only active orders
-      await this.add({ id: item.id, order: item.order, status: 'active' });
+      // await this.add({ id: item. ...item, status: 'active' });
+      await this.add({
+        id: item.id,
+        orderData: {
+          ...item,
+          status: 'active'
+        }
+      });
       numOrders += 1;
       this._checkSignal(signal);
     }
@@ -367,10 +389,7 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.Status, Jo
     return { syncCursor: cursor };
   }
 
-  protected async *_getSnapshot(source: {
-    bucket: string;
-    file: string;
-  }): AsyncGenerator<{ id: string; order: ChainOBOrder }> {
+  protected async *_getSnapshot(source: { bucket: string; file: string }): AsyncGenerator<OrderbookSnapshotOrder> {
     const cloudStorageFile = this._storage.bucket(source.bucket).file(source.file);
     const snapshotReadStream = cloudStorageFile.createReadStream();
 
@@ -381,7 +400,7 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.Status, Jo
 
     for await (const line of rl) {
       try {
-        const order = JSON.parse(line) as { id: string; order: ChainOBOrder };
+        const order = JSON.parse(line) as OrderbookSnapshotOrder;
         yield order;
       } catch (err) {
         if (err instanceof Error) {

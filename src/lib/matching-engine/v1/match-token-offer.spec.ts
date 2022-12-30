@@ -20,11 +20,17 @@ describe('Matching Engine V1 - Match Token Offer', () => {
   });
 
   it('should work lol', async () => {
-    const tokenListing = getOrder(chainId, 0.10001, true, 'single-token', { collection: '0x1', tokenId: '1' });
-    const tokenOffer = getOrder(chainId, 0.1, false, 'single-token', { collection: '0x1', tokenId: '1' });
+    const { orderData: tokenListingData } = getOrder(chainId, 0.10001, true, 'single-token', {
+      collection: '0x1',
+      tokenId: '1'
+    });
+    const { orderData: tokenOfferData, order: tokenOffer } = getOrder(chainId, 0.1, false, 'single-token', {
+      collection: '0x1',
+      tokenId: '1'
+    });
 
-    await orderbook.save({ order: tokenListing, status: 'active' });
-    await orderbook.save({ order: tokenOffer, status: 'active' });
+    await orderbook.save(tokenListingData);
+    await orderbook.save(tokenOfferData);
 
     const result = await matchingEngine.matchOrder(tokenOffer);
     console.log(result);
