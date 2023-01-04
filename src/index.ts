@@ -40,7 +40,7 @@ async function main() {
     network.broadcaster,
     {
       debug: config.env.debug,
-      concurrency: 20, // ideally this is set high enough that we never max it out
+      concurrency: network.isForkingEnabled ? 1 : 20, // ideally this is set high enough that we never max it out
       enableMetrics: false
     }
   );

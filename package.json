@@ -10,7 +10,7 @@
     "lint": "eslint . --ext .ts,.js",
     "format": "prettier -w ./src",
     "start": "node -r dotenv/config -r module-alias/register ./dist/index.js",
-    "start:dev": "npm run setup:fork && npx cross-env ENABLE_FORKING=1 ts-node -r dotenv/config ./src/index.ts",
+    "start:dev": "npx cross-env ENABLE_FORKING=1 ts-node -r dotenv/config ./src/index.ts",
     "start:dev:non-fork": "ts-node -r dotenv/config ./src/index.ts",
     "start:prod": "npm run build && npm run start",
     "start:fork": "hardhat node --config ./hardhat.config.ts --network hardhat",

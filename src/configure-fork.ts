@@ -9,6 +9,7 @@ import { ChainId } from '@infinityxyz/lib/types/core';
 import { getExchangeAddress } from '@infinityxyz/lib/utils';
 import '@nomiclabs/hardhat-ethers';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
+import { Infinity, Seaport } from '@reservoir0x/sdk';
 
 import { logger } from './common/logger';
 
@@ -39,6 +40,7 @@ const fundAccount = async (
 };
 
 const setupForkedExecutor = async (
+  chainId: number,
   provider: _ethers.providers.JsonRpcProvider,
   initiator: _ethers.Signer,
   exchangeContract: ethers.Contract,
@@ -54,8 +56,18 @@ const setupForkedExecutor = async (
 
   logger.log('fork', 'Setting match executor on exchange contract');
   const txn = await exchangeContract.connect(contractOwner).updateMatchExecutor(matchExecutor.address);
+
   await provider.waitForTransaction((txn as unknown as { hash: string }).hash, 1);
   logger.log('fork', 'Updated match executor on exchange contract');
+
+  logger.log('fork', 'Enabling exchanges...');
+  const exchanges = [Infinity.Addresses.Exchange[chainId], Seaport.Addresses.Exchange[chainId]];
+
+  for (const item of exchanges) {
+    const txn = await matchExecutor.connect(initiator.connect(provider)).addEnabledExchange(item);
+    await txn.wait();
+  }
+  logger.log('fork', 'Exchanges enabled');
 
   return {
     matchExecutorAddress: matchExecutor.address,
@@ -88,6 +100,8 @@ async function resetFork(chainIdInt: number) {
 }
 
 async function main() {
+  await network.provider.send('evm_setAutomine', [true]);
+  await network.provider.send('evm_setIntervalMining', [0]);
   const chainId = process.env.CHAIN_ID as ChainId;
   const chainIdInt = parseInt(chainId, 10);
   await resetFork(chainIdInt);
@@ -109,6 +123,7 @@ async function main() {
   logger.log('fork', 'Funded accounts');
 
   const { matchExecutorAddress, exchangeAddress } = await setupForkedExecutor(
+    chainIdInt,
     httpProvider,
     initiator,
     exchangeContract,
@@ -123,6 +138,8 @@ HTTP_PROVIDER_URL="${httpUrl}"
 WEBSOCKET_PROVIDER_URL="${websocketUrl}"
 `;
 
+  await network.provider.send('evm_setAutomine', [false]);
+  await network.provider.send('evm_setIntervalMining', [15_000]);
   await writeFile('./.forked.env', data);
 }
 

@@ -13,7 +13,7 @@ export class ForkedNetworkBroadcaster extends Broadcaster<Options> {
 
     try {
       const result = await this._options.wallet.connect(this._options.provider).sendTransaction(fullTxn);
-      const receipt = await this._options.provider.getTransactionReceipt(result.hash);
+      const receipt = await this._options.provider.waitForTransaction(result.hash, 1);
 
       return { receipt, txn: result };
     } catch (err) {

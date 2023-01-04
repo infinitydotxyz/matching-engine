@@ -55,11 +55,8 @@ export const getNetworkConfig = async (chainId: ChainId) => {
     }
     const initiatorBalance = await httpProvider.getBalance(initiator.address);
 
-    console.log(`Initiator balance: ${ethers.utils.formatEther(initiatorBalance)}`);
-
     if (initiatorBalance.eq(0)) {
       logger.error('config', 'Initiator balance is 0, please fund the account');
-      process.exit(1);
     }
 
     return {

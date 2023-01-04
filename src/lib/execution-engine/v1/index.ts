@@ -38,7 +38,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     options?: ProcessOptions
   ) {
     const version = 'v1';
-    super(_db, `execution-engine:${version}`, options);
+    super(_db, `execution-engine:${version}`, { ...options, attempts: 1 });
     this._version = version;
   }
 
@@ -104,9 +104,16 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         `Block" ${job.data.targetBlockNumber}. Target gas price: ${targetGasPriceGwei} gwei. Found ${matches.length} order matches. ${nonConflictingMatches.length} non-conflicting order matches`
       );
 
-      const txn = await this._generateTxn(nonConflictingMatches, targetBaseFeeGwei, targetPriorityFeeGwei);
+      const { txn, receipt } = await this._generateTxn(nonConflictingMatches, targetBaseFeeGwei, targetPriorityFeeGwei);
+
+      if (receipt.status === 1) {
+        logger.log('execution-engine', `Block ${job.data.targetBlockNumber}. Txn ${txn.hash} executed successfully`);
+      } else {
+        console.log(JSON.stringify(receipt, null, 2));
+        logger.log('execution-engine', `Block ${job.data.targetBlockNumber}. Txn ${txn.hash} execution failed`);
+      }
     } catch (err) {
-      console.error(`failed to process job for block ${job.data.targetBlockNumber}`);
+      logger.error('execution-engine', `failed to process job for block ${job.data.targetBlockNumber} ${err}`);
       process.exit(1);
     }
 
@@ -128,8 +135,6 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     });
 
     const res = await this._broadcaster.broadcast(txn);
-
-    console.log(JSON.stringify(res.receipt, null, 2));
 
     return {
       batches,
