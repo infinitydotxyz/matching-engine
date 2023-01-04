@@ -1,10 +1,13 @@
 import { ethers } from 'ethers';
 
-import { config } from '@/config';
+import { DEFAULT_FLASHBOTS_RELAY, FlashbotsBundleProvider } from '@flashbots/ethers-provider-bundle';
+
+import { config, getNetworkConfig } from '@/config';
 
 import { firestore, redis, redlock, storage } from './common/db';
 import { logger } from './common/logger';
 import { ExecutionEngine } from './lib/execution-engine/v1';
+import { MatchExecutor } from './lib/match-executor/match-executor';
 import { MatchingEngine } from './lib/matching-engine/v1';
 import { OrderRelay } from './lib/order-relay/v1/order-relay';
 import { OrderbookV1 } from './lib/orderbook';
@@ -13,21 +16,28 @@ process.on('unhandledRejection', (error) => {
   logger.error('process', `Unhandled rejection: ${error}`);
 });
 
-logger.info('process', `Starting server with config: ${config.env.mode}`);
-
 async function main() {
-  const network = parseInt(config.env.chainId, 10);
-  const websocketProvider = new ethers.providers.WebSocketProvider(config.providers.websocketUrl, network);
-  const rpcProvider = new ethers.providers.JsonRpcProvider(config.providers.httpUrl, network);
+  const network = await getNetworkConfig(config.env.chainId);
+
+  logger.info(
+    'process',
+    `Starting server with config: ${config.env.mode} Using forked network: ${network.isForkingEnabled}`
+  );
+
   const orderbookStorage = new OrderbookV1.OrderbookStorage(redis, config.env.chainId);
   const orderbook = new OrderbookV1.Orderbook(orderbookStorage);
+
+  const matchExecutor = new MatchExecutor(config.env.chainId, network.matchExecutorAddress, network.initiator);
+
   const executionEngine = new ExecutionEngine(
     orderbookStorage,
     redis,
     redlock,
-    websocketProvider,
-    rpcProvider,
-    config.broadcasting.blockOffset,
+    network.websocketProvider,
+    network.httpProvider,
+    matchExecutor,
+    2,
+    network.broadcaster,
     {
       debug: config.env.debug,
       concurrency: 20, // ideally this is set high enough that we never max it out

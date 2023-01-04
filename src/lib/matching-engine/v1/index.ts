@@ -8,7 +8,7 @@ import { ChainId } from '@infinityxyz/lib/types/core';
 
 import { logger } from '@/common/logger';
 import { config } from '@/config';
-import { ExecutionEngine } from '@/lib/execution-engine/v1';
+import { Match } from '@/lib/match-executor/match/types';
 import { OrderbookV1 as OB } from '@/lib/orderbook';
 import { Order } from '@/lib/orderbook/v1';
 import { OrderData, OrderParams } from '@/lib/orderbook/v1/types';
@@ -22,15 +22,6 @@ export type MatchingEngineResult = {
 };
 
 export type MatchingEngineJob = { id: string; order: OB.Types.OrderParams };
-
-export interface Match {
-  matchId: string;
-  maxGasPriceGwei: number;
-  arbitrageWei: string;
-  isNative: boolean;
-  offer: OrderData;
-  listing: OrderData;
-}
 
 export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, MatchingEngineResult> {
   public readonly version: string;

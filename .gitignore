@@ -1,4 +1,6 @@
 .env
+.forked.env
+
 src/config/creds/**/*
 
 dist
@@ -7,3 +9,6 @@ node_modules
 .DS_STORE
 
 dump.rdb
+
+artifacts/
+cache/

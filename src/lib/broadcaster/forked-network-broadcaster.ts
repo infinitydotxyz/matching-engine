@@ -1,0 +1,24 @@
+import { ethers } from 'ethers';
+
+import { Broadcaster, Eip1559Txn } from './broadcaster.abstract';
+
+export type Options = {
+  wallet: ethers.Wallet;
+  provider: ethers.providers.JsonRpcProvider;
+};
+
+export class ForkedNetworkBroadcaster extends Broadcaster<Options> {
+  async broadcast(txn: Omit<Eip1559Txn, 'type' | 'chainId'>) {
+    const fullTxn = this._getFullTxn(txn);
+
+    try {
+      const result = await this._options.wallet.connect(this._options.provider).sendTransaction(fullTxn);
+      const receipt = await this._options.provider.getTransactionReceipt(result.hash);
+
+      return { receipt, txn: result };
+    } catch (err) {
+      console.error(err);
+      throw err;
+    }
+  }
+}
