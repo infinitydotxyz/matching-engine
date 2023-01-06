@@ -41,6 +41,10 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
     return `orderbook:${this.version}:chain:${this._chainId}:order-status:active`;
   }
 
+  get executedOrdersOrderedSetKey() {
+    return `orderbook:${this.version}:chain:${this._chainId}:order-status:executed`;
+  }
+
   getOrderId(order: Order): string {
     return order.id;
   }

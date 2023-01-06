@@ -271,7 +271,6 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
         });
     });
 
-    // TODO handle pending orders
     return matches;
   }
 
@@ -352,9 +351,7 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
     const mainOrderParams = Order.getOrderParams(mainOrder.id, config.env.chainId, mainOrder.order);
 
     const matchKeys = matches.map((match) => this._storage.getFullOrderKey(match.id));
-
     const matchesStrings = matchKeys.length > 0 ? await this._db.mget(...matchKeys) : [];
-
     const matchesWithFullData = matches.map((item, index) => {
       let orderData: OrderData | null;
       try {

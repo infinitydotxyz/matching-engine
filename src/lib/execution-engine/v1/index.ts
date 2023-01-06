@@ -1,8 +1,10 @@
 import { BulkJobOptions, Job } from 'bullmq';
-import { BigNumber, constants, ethers } from 'ethers';
+import { BigNumber, ethers } from 'ethers';
 import { parseUnits } from 'ethers/lib/utils';
 import Redis from 'ioredis';
 import Redlock, { ExecutionError, RedlockAbortSignal } from 'redlock';
+
+import { ONE_MIN } from '@infinityxyz/lib/utils';
 
 import { logger } from '@/common/logger';
 import { config } from '@/config';
@@ -95,8 +97,12 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         `Generating txn for target: ${job.data.targetBlockNumber}. Current Gas Price: ${job.data.currentGasPriceGwei} gwei. Target gas price: ${targetGasPriceGwei} gwei`
       );
 
-      const matches = await this._loadMatches(targetGasPriceGwei);
-      const sortedMatches = this._sortMatches(matches);
+      const [matches, pendingOrders] = await Promise.all([
+        this._loadMatches(targetGasPriceGwei),
+        this._loadPendingOrderIds()
+      ]);
+      const nonPendingMatches = this._filterPendingOrders(matches, pendingOrders);
+      const sortedMatches = this._sortMatches(nonPendingMatches);
       const nonConflictingMatches = this._filterConflicting(sortedMatches);
 
       logger.log(
@@ -115,8 +121,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
 
       if (receipt.status === 1) {
         const gasUsage = receipt.gasUsed.toString();
-        // TODO update the orderbook so the pending orders are marked as filled for ~ 5min?
-
+        await this._savePendingMatches(nonConflictingMatches);
         logger.log(
           'execution-engine',
           `Block ${job.data.targetBlockNumber}. Txn ${txn.hash} executed successfully. Gas used: ${gasUsage}`
@@ -160,8 +165,37 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     };
   }
 
+  protected _filterPendingOrders(matches: Match[], pendingOrders: Set<string>) {
+    return matches.filter((match) => {
+      return !pendingOrders.has(match.listing.id) && !pendingOrders.has(match.offer.id);
+    });
+  }
+
+  protected async _savePendingMatches(matches: Match[]) {
+    const pipeline = this._db.pipeline();
+    const now = Date.now();
+    const expiration = now + ONE_MIN * 5;
+    for (const match of matches) {
+      pipeline.zadd(this._storage.executedOrdersOrderedSetKey, expiration, match.listing.id);
+      pipeline.zadd(this._storage.executedOrdersOrderedSetKey, expiration, match.offer.id);
+    }
+    await pipeline.exec(); // TODO remove expired orders from the set
+  }
+
+  protected async _loadPendingOrderIds() {
+    const now = Date.now();
+    const res = await this._db.zrange(
+      this._storage.executedOrdersOrderedSetKey,
+      Number.MAX_SAFE_INTEGER,
+      now,
+      'BYSCORE',
+      'REV'
+    );
+
+    return new Set(res);
+  }
+
   protected async _loadMatches(targetGasPriceGwei: number) {
-    logger.log('execution-engine', `Loading matches with gas price between ${targetGasPriceGwei} and Max safe int}`);
     const res = await this._db.zrange(
       this._storage.matchesByGasPriceOrderedSetKey,
       Number.MAX_SAFE_INTEGER,
@@ -175,7 +209,6 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
 
     const fullMatchKeys = res.map(this._storage.getFullMatchKey.bind(this._storage));
     const fullMatchStrings = fullMatchKeys.length > 0 ? await this._db.mget(...fullMatchKeys) : [];
-    console.log(`Found: ${res.length} items and ${fullMatchStrings.length} full match strings`);
 
     const fullMatches = fullMatchStrings
       .map((item) => {
@@ -212,7 +245,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
 
   protected _filterConflicting(matches: Match[]) {
     const orderIds = new Set<string>();
-    const wallets = new Set<string>();
+    // const wallets = new Set<string>();
 
     const tokens = new Set<string>();
 
@@ -226,16 +259,17 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         return false;
       }
 
-      /**
-       * limit each user to a single executing order at a time
-       */
-      const listingMaker = match.listing.order.signer;
-      const offerMaker = match.offer.order.signer;
-      if (wallets.has(listingMaker) && listingMaker !== constants.AddressZero) {
-        return false;
-      } else if (wallets.has(offerMaker) && offerMaker !== constants.AddressZero) {
-        return false;
-      }
+      // TODO configure filtering on wallets to be based on transferred tokens and invalid balances
+      // /**
+      //  * limit each user to a single executing order at a time
+      //  */
+      // const listingMaker = match.listing.order.signer;
+      // const offerMaker = match.offer.order.signer;
+      // if (wallets.has(listingMaker) && listingMaker !== constants.AddressZero) {
+      //   return false;
+      // } else if (wallets.has(offerMaker) && offerMaker !== constants.AddressZero) {
+      //   return false;
+      // }
 
       /**
        * only attempt to execute orders for unique tokens
@@ -250,8 +284,8 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       }
 
       listingTokens.forEach((token) => tokens.add(token));
-      wallets.add(listingMaker);
-      wallets.add(offerMaker);
+      // wallets.add(listingMaker);
+      // wallets.add(offerMaker);
       orderIds.add(listingId);
       orderIds.add(offerId);
       return true;

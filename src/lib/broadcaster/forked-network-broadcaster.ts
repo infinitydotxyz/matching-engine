@@ -1,5 +1,7 @@
 import { ethers } from 'ethers';
 
+import { logger } from '@/common/logger';
+
 import { Broadcaster, Eip1559Txn } from './broadcaster.abstract';
 
 export type Options = {
@@ -17,7 +19,7 @@ export class ForkedNetworkBroadcaster extends Broadcaster<Options> {
 
       return { receipt, txn: result };
     } catch (err) {
-      console.error(err);
+      logger.error('forked-network-broadcaster', `${err}`);
       throw err;
     }
   }

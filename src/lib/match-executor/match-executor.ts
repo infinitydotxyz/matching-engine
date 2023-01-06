@@ -1,8 +1,7 @@
 import { BigNumberish, constants, ethers } from 'ethers';
-import { defaultAbiCoder, parseUnits, splitSignature } from 'ethers/lib/utils';
+import { defaultAbiCoder, splitSignature } from 'ethers/lib/utils';
 
-import { InfinityOBComplicationABI } from '@infinityxyz/lib/abi';
-import { ChainId, ChainNFTs, ChainOBOrder } from '@infinityxyz/lib/types/core';
+import { ChainId, ChainOBOrder } from '@infinityxyz/lib/types/core';
 import * as Sdk from '@reservoir0x/sdk';
 
 import MatchExecutorAbi from '@/common/abi/match-executor.json';
@@ -34,14 +33,10 @@ export class MatchExecutor {
       if (batch.externalFulfillments.calls.length > 0) {
         isNative = false;
       }
-
-      for (const match of batch.matches) {
-        // const type = match.matchType;
+      batch.matches = batch.matches.map((match) => {
         for (let i = 0; i < match.buys.length; i += 1) {
           const buy = match.buys[i];
           const sell = match.sells[i];
-          // const constructs = match.constructs;
-
           if (buy.constraints[0] !== sell.constraints[0]) {
             throw new Error('Buy and sell constraints do not match');
           } else if (buy.execParams[0] !== sell.execParams[0]) {
@@ -50,8 +45,20 @@ export class MatchExecutor {
             throw new Error("Currencies don't match");
           }
         }
-      }
+
+        if (match.constructs.length === 0) {
+          return {
+            buys: match.buys,
+            sells: match.sells,
+            matchType: match.matchType,
+            constructs: match.sells.map((item) => item.nfts)
+          };
+        }
+        return match;
+      });
     }
+
+    logger.log('match-executor', `Batches ${JSON.stringify(data.batches, null, 2)}`);
 
     const encoded = isNative
       ? this._contract.interface.encodeFunctionData('executeNativeMatches', [data.batches[0].matches])
@@ -87,25 +94,7 @@ export class MatchExecutor {
         if (listing.source !== 'infinity' || offer.source !== 'infinity') {
           throw new Error('Expected native orders');
         }
-
-        const listingOrder = new Sdk.Infinity.Order(this.chain, listing.sourceOrder as Sdk.Infinity.Types.SignedOrder);
-
-        const offerOrder = new Sdk.Infinity.Order(this.chain, offer.sourceOrder as Sdk.Infinity.Types.SignedOrder);
-
-        const type = this._getMatchType(listingOrder.getSignedOrder(), offerOrder.getSignedOrder());
-        let orderConstructs: ChainNFTs[] = [];
-        if (type === MatchOrdersType.OneToOneUnspecific) {
-          orderConstructs = listingOrder.params.nfts;
-        } else if (type === MatchOrdersType.OneToMany) {
-          throw new Error('One to many orders are not yet supported');
-        }
-
-        const matchOrders: MatchOrders = {
-          buys: [offerOrder.getSignedOrder()],
-          sells: [listingOrder.getSignedOrder()],
-          constructs: [orderConstructs],
-          matchType: type
-        };
+        const matchOrders = await this._getMatch({ listing: match.listing, offer: match.offer });
 
         matches.push(matchOrders);
       } else {
@@ -134,89 +123,8 @@ export class MatchExecutor {
 
         const nftsToTransfer = match.listing.order.nfts;
 
-        const intermediateOrder = new Sdk.Infinity.Order(
-          this.chain,
-          match.listing.order as Sdk.Infinity.Types.SignedOrder
-        );
-
-        intermediateOrder.signer = this._contract.address; // TODO will this cause an error?
-        intermediateOrder.nonce = '2'; // TODO
-        intermediateOrder.maxGasPrice = parseUnits('100', 'gwei').toString(); // TODO
-
-        const intermediateOrderHash = intermediateOrder.hash();
-        const { types, value, domain } = intermediateOrder.getSignatureData();
-        const signature = splitSignature(await this._intermediary._signTypedData(domain, types, value));
-
-        const encodedSig = defaultAbiCoder.encode(
-          ['bytes32', 'bytes32', 'uint8'],
-          [signature.r, signature.s, signature.v]
-        );
-
-        const signedIntermediateOrder: Sdk.Infinity.Types.SignedOrder = {
-          ...value,
-          sig: encodedSig
-        };
-
-        const offerOrder = new Sdk.Infinity.Order(
-          this.chain,
-          match.offer.sourceOrder as Sdk.Infinity.Types.SignedOrder
-        );
-        const type = this._getMatchType(signedIntermediateOrder, offerOrder.getSignedOrder());
-        let orderConstructs: ChainNFTs[] = [];
-        if (type === MatchOrdersType.OneToOneUnspecific) {
-          orderConstructs = signedIntermediateOrder.nfts;
-        } else if (type === MatchOrdersType.OneToMany) {
-          throw new Error('One to many orders are not yet supported');
-        }
         // TODO check start/end price, is sell order, currency, complication
-
-        const buyHash = offerOrder.hash();
-        const sellHash = intermediateOrderHash;
-        const matchOrders: MatchOrders = {
-          buys: [offerOrder.getSignedOrder()],
-          sells: [signedIntermediateOrder],
-          constructs: [orderConstructs],
-          matchType: type
-        };
-
-        const complication = new ethers.Contract(
-          match.offer.order.execParams[0],
-          InfinityOBComplicationABI,
-          this._intermediary.provider
-        );
-
-        const isBuyValid = await complication.isOrderValid(matchOrders.buys[0], buyHash);
-        logger.log('match-executor', `Is buy valid: ${isBuyValid}`);
-        const isSellValid = await complication.isOrderValid(matchOrders.sells[0], sellHash);
-        logger.log('match-executor', `Is sell valid: ${isSellValid}`);
-
-        const canExec = await complication.canExecMatchOrder(
-          matchOrders.sells[0],
-          matchOrders.buys[0],
-          matchOrders.constructs[0]
-        );
-        logger.log('match-executor', `Can exec: ${canExec}`);
-
-        const canExecOne = await complication.canExecMatchOneToOne(matchOrders.sells[0], matchOrders.buys[0]);
-        logger.log('match-executor', `Can exec one: ${canExecOne}`);
-
-        const isVerified = await complication.verifyMatchOrders(
-          sellHash,
-          buyHash,
-          matchOrders.sells[0],
-          matchOrders.buys[0]
-        );
-
-        logger.log('match-executor', `Is verified: ${isVerified}`);
-
-        const verifyOne = await complication.verifyMatchOneToOneOrders(
-          sellHash,
-          buyHash,
-          matchOrders.sells[0],
-          matchOrders.buys[0]
-        );
-
-        logger.log('match-executor', `Is verified one: ${verifyOne}`);
+        const matchOrders = await this._getMatch({ listing: match.listing, offer: match.offer });
 
         externalFulfillments.calls.push(call);
         externalFulfillments.nftsToTransfer.push(...nftsToTransfer);
@@ -235,21 +143,24 @@ export class MatchExecutor {
   }
 
   protected async _getMatch(orderMatch: { listing: OrderData; offer: OrderData }): Promise<MatchOrders> {
-    let buy = orderMatch.offer.order;
-    const sell = orderMatch.listing.order;
+    const buy = orderMatch.offer.order;
+    let sell = orderMatch.listing.order;
 
     const matchType = this._getMatchType(buy, sell);
 
-    const constructs = matchType === MatchOrdersType.OneToOneSpecific ? [] : [buy.nfts];
+    const constructs = matchType === MatchOrdersType.OneToOneSpecific ? [] : [sell.nfts];
 
-    if (buy.signer === constants.AddressZero) {
+    if (sell.signer === constants.AddressZero) {
       // TODO adjust price, start time/end time, currency
+      // TODO we should validate orders after this
+
+      const [numItems, , , , , nonce, maxGasPrice] = sell.constraints;
       const intermediateOrder = new Sdk.Infinity.Order(this.chain, {
-        ...buy,
-        constraints: buy.constraints.map((item) => item.toString())
+        ...sell,
+        constraints: sell.constraints.map((item) => item.toString())
       });
       const res = await this._signOrder(intermediateOrder);
-      buy = res.signedOrder;
+      sell = res.signedOrder;
     }
 
     return {

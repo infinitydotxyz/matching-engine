@@ -111,7 +111,11 @@ export const config = {
   env: {
     mode,
     chainId: chainId,
-    debug: Number(getEnvVariable('DEBUG', false)) === 1
+    debug: Number(getEnvVariable('DEBUG', false)) === 1,
+    isForkingEnabled
+  },
+  orderRelay: {
+    enableSyncing: false
   },
   broadcasting: {
     blockOffset: 2
