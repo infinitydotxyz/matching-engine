@@ -1,5 +1,3 @@
-import { OrderSource } from '@infinityxyz/lib/types/core';
-
 import { Match } from './types';
 
 export abstract class OrderMatch<T> {

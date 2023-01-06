@@ -18,7 +18,7 @@ export abstract class Broadcaster<T> {
     return parseInt(this._chainId, 10);
   }
 
-  constructor(protected _chainId: ChainId, protected _options: T) {}
+  constructor(protected _chainId: ChainId, protected underlyingChainId: number, protected _options: T) {}
 
   abstract broadcast(
     txn: Omit<Eip1559Txn, 'type' | 'chainId'>
@@ -27,7 +27,7 @@ export abstract class Broadcaster<T> {
   protected _getFullTxn(txn: Omit<Eip1559Txn, 'type' | 'chainId'>): Eip1559Txn {
     return {
       ...txn,
-      chainId: this.chainId,
+      chainId: this.underlyingChainId,
       type: 2
     };
   }

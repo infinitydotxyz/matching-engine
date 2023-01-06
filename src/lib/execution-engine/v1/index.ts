@@ -104,12 +104,24 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         `Block" ${job.data.targetBlockNumber}. Target gas price: ${targetGasPriceGwei} gwei. Found ${matches.length} order matches. ${nonConflictingMatches.length} non-conflicting order matches`
       );
 
-      const { txn, receipt } = await this._generateTxn(nonConflictingMatches, targetBaseFeeGwei, targetPriorityFeeGwei);
+      const res = await this._generateTxn(nonConflictingMatches, targetBaseFeeGwei, targetPriorityFeeGwei);
+      if (!res) {
+        logger.log('execution-engine', `Block ${job.data.targetBlockNumber}. No matches found`);
+        return;
+      }
+      const { txn, receipt } = res;
+
+      console.log(JSON.stringify(receipt, null, 2));
 
       if (receipt.status === 1) {
-        logger.log('execution-engine', `Block ${job.data.targetBlockNumber}. Txn ${txn.hash} executed successfully`);
+        const gasUsage = receipt.gasUsed.toString();
+        // TODO update the orderbook so the pending orders are marked as filled for ~ 5min?
+
+        logger.log(
+          'execution-engine',
+          `Block ${job.data.targetBlockNumber}. Txn ${txn.hash} executed successfully. Gas used: ${gasUsage}`
+        );
       } else {
-        console.log(JSON.stringify(receipt, null, 2));
         logger.log('execution-engine', `Block ${job.data.targetBlockNumber}. Txn ${txn.hash} execution failed`);
       }
     } catch (err) {
@@ -122,6 +134,9 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
   }
 
   protected async _generateTxn(matches: Match[], baseFeeGwei: number, priorityFeeGwei: number) {
+    if (matches.length === 0) {
+      return null;
+    }
     const { batches } = await this._matchExecutor.executeMatchesTxn(matches);
 
     const baseFeeWei = parseUnits(baseFeeGwei.toString(), 'gwei');
@@ -134,6 +149,8 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       gasLimit: 30_000_000
     });
 
+    logger.log(`execution-engine`, `Txn: ${JSON.stringify(txn, null, 2)}`);
+
     const res = await this._broadcaster.broadcast(txn);
 
     return {
@@ -144,15 +161,21 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
   }
 
   protected async _loadMatches(targetGasPriceGwei: number) {
+    logger.log('execution-engine', `Loading matches with gas price between ${targetGasPriceGwei} and Max safe int}`);
     const res = await this._db.zrange(
       this._storage.matchesByGasPriceOrderedSetKey,
-      targetGasPriceGwei,
       Number.MAX_SAFE_INTEGER,
-      'REV'
+      targetGasPriceGwei,
+      'BYSCORE',
+      'REV',
+      'LIMIT',
+      0,
+      1000
     );
 
     const fullMatchKeys = res.map(this._storage.getFullMatchKey.bind(this._storage));
-    const fullMatchStrings = await this._db.mget(...fullMatchKeys);
+    const fullMatchStrings = fullMatchKeys.length > 0 ? await this._db.mget(...fullMatchKeys) : [];
+    console.log(`Found: ${res.length} items and ${fullMatchStrings.length} full match strings`);
 
     const fullMatches = fullMatchStrings
       .map((item) => {

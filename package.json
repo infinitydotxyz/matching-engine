@@ -18,7 +18,8 @@
     "update:lib": "npm install @infinityxyz/lib@latest",
     "pre:push": "npm run format && npm run lint && npm run build",
     "test": "jest",
-    "build:contracts": "rimraf artifacts && rimraf cache && hardhat compile --force"
+    "build:contracts": "rimraf artifacts && rimraf cache && hardhat compile --force",
+    "create-match": "npx cross-env ENABLE_FORKING=1 ts-node -r dotenv/config ./src/create-match.ts"
   },
   "dependencies": {
     "@flashbots/ethers-provider-bundle": "^0.6.1",

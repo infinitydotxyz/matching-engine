@@ -86,7 +86,7 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
     };
   }
 
-  public async run() {
+  public async run(sync = true) {
     const orderSyncKey = `order-relay:chain:${config.env.chainId}:lock`;
     const lockDuration = 15_000;
 
@@ -96,22 +96,29 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
     const runPromise = super._run().catch((err: Error) => {
       logger.error('order-relay', `Unexpected error: ${err.message}`);
     });
-    const syncPromise = this._redlock
-      .using([orderSyncKey], lockDuration, async (signal) => {
-        /**
-         * sync and maintain the orderbook
-         */
-        await this._sync(signal);
-      })
-      .catch((err) => {
-        if (err instanceof ExecutionError) {
-          logger.warn('order-relay', 'Failed to acquire lock, another instance is syncing');
-        } else {
-          throw err;
-        }
-      });
 
-    await Promise.all([runPromise, syncPromise]);
+    if (sync) {
+      const syncPromise = this._redlock
+        .using([orderSyncKey], lockDuration, async (signal) => {
+          /**
+           * sync and maintain the orderbook
+           */
+          await this._sync(signal);
+        })
+        .catch((err) => {
+          if (err instanceof ExecutionError) {
+            logger.warn('order-relay', 'Failed to acquire lock, another instance is syncing');
+          } else {
+            throw err;
+          }
+        });
+
+      await Promise.all([runPromise, syncPromise]);
+      return;
+    } else {
+      await runPromise;
+      return;
+    }
   }
 
   async add(data: JobData | JobData[]): Promise<void> {

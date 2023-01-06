@@ -1,5 +1,6 @@
 import { config } from 'dotenv';
 import { ethers as _ethers, ethers } from 'ethers';
+import { parseEther } from 'ethers/lib/utils';
 import { writeFile } from 'fs/promises';
 import * as hh from 'hardhat';
 import { network } from 'hardhat';
@@ -10,6 +11,7 @@ import { getExchangeAddress } from '@infinityxyz/lib/utils';
 import '@nomiclabs/hardhat-ethers';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { Infinity, Seaport } from '@reservoir0x/sdk';
+import { Erc721, Weth } from '@reservoir0x/sdk/dist/common/helpers';
 
 import { logger } from './common/logger';
 
@@ -25,18 +27,38 @@ const getExchange = async (provider: _ethers.providers.JsonRpcProvider, chainId:
   };
 };
 
+const deployTestErc721 = async (owner: ethers.Wallet) => {
+  logger.log('fork', 'Deploying test erc721...');
+  const erc721 = await hh.ethers.deployContract('MockERC721', ['Infinity', 'INF'], owner);
+  logger.log('fork', `Deployed test erc721 to ${erc721.address.toLowerCase()}`);
+
+  return erc721;
+};
+
 const fundAccount = async (
   from: SignerWithAddress,
-  to: ethers.Wallet | ethers.Signer,
+  to: ethers.Wallet | ethers.Signer | string,
   provider: ethers.providers.JsonRpcProvider
 ) => {
   const funderBalance = await from.getBalance();
   const txn = await from.sendTransaction({
     value: funderBalance.div(2).toString(),
-    to: await to.getAddress()
+    to: typeof to === 'string' ? to : await to.getAddress(),
+    chainId: provider.network.chainId
   });
 
   await provider.waitForTransaction(txn.hash, 1);
+};
+
+const depositWETH = async (
+  wallet: ethers.Wallet | ethers.Signer,
+  provider: ethers.providers.JsonRpcProvider,
+  chainId: number
+) => {
+  const weth = new Weth(provider, chainId);
+  const txn = await weth.deposit(wallet, parseEther('10'));
+
+  await provider.waitForTransaction((txn as { hash: string }).hash, 1);
 };
 
 const setupForkedExecutor = async (
@@ -100,8 +122,8 @@ async function resetFork(chainIdInt: number) {
 }
 
 async function main() {
-  await network.provider.send('evm_setAutomine', [true]);
-  await network.provider.send('evm_setIntervalMining', [0]);
+  await network.provider.send('evm_setAutomine', [false]);
+  await network.provider.send('evm_setIntervalMining', [1000]);
   const chainId = process.env.CHAIN_ID as ChainId;
   const chainIdInt = parseInt(chainId, 10);
   await resetFork(chainIdInt);
@@ -110,18 +132,28 @@ async function main() {
   const httpProvider = new _ethers.providers.JsonRpcProvider(httpUrl, chainIdInt);
 
   logger.log('fork', 'Funding accounts...');
-  const [_initiator, _contractOwner] = await hh.ethers.getSigners();
+  const [_initiator, _contractOwner, _matchExecutor, _test, _erc721Owner] = await hh.ethers.getSigners();
   const initiator = ethers.Wallet.createRandom();
+  const erc721Owner = ethers.Wallet.createRandom().connect(httpProvider);
+  const test = ethers.Wallet.createRandom().connect(httpProvider);
 
   const { ownerAddress, contract: exchangeContract } = await getExchange(httpProvider, chainId);
   const contractOwner = await hh.ethers.getImpersonatedSigner(ownerAddress);
 
   const initiatorFundingPromise = fundAccount(_initiator, initiator, httpProvider);
   const contractOwnerFundingPromise = fundAccount(_contractOwner, contractOwner, httpProvider);
+  const testAccountFundingPromise = fundAccount(_test, test, httpProvider);
+  const erc721OwnerFundingPromise = fundAccount(_erc721Owner, erc721Owner, httpProvider);
 
-  await Promise.all([initiatorFundingPromise, contractOwnerFundingPromise]);
+  await Promise.all([
+    initiatorFundingPromise,
+    contractOwnerFundingPromise,
+    testAccountFundingPromise,
+    erc721OwnerFundingPromise
+  ]);
   logger.log('fork', 'Funded accounts');
 
+  await depositWETH(test, httpProvider, chainIdInt);
   const { matchExecutorAddress, exchangeAddress } = await setupForkedExecutor(
     chainIdInt,
     httpProvider,
@@ -129,6 +161,16 @@ async function main() {
     exchangeContract,
     contractOwner
   );
+
+  await fundAccount(_matchExecutor, matchExecutorAddress, httpProvider);
+
+  const erc721 = await deployTestErc721(erc721Owner);
+  const erc721Helper = new Erc721(httpProvider, erc721.address);
+
+  const txn = await erc721Helper.approve(erc721Owner, Seaport.Addresses.Exchange[chainIdInt]);
+  const txn2 = await new Weth(httpProvider, chainIdInt).approve(test, Infinity.Addresses.Exchange[chainIdInt]);
+  await Promise.all([txn.wait(), txn2.wait()]);
+
   const data = `
 INITIATOR_KEY="${initiator.privateKey}"
 MATCH_EXECUTOR_ADDRESS="${matchExecutorAddress}"
@@ -136,10 +178,13 @@ EXCHANGE_ADDRESS="${exchangeAddress}"
 CHAIN_ID="${chainId}"
 HTTP_PROVIDER_URL="${httpUrl}"
 WEBSOCKET_PROVIDER_URL="${websocketUrl}"
+ERC_721_ADDRESS="${erc721.address}"
+ERC_721_OWNER_KEY="${erc721Owner.privateKey}"
+TEST_ACCOUNT_KEY="${test.privateKey}"
 `;
 
   await network.provider.send('evm_setAutomine', [false]);
-  await network.provider.send('evm_setIntervalMining', [15_000]);
+  await network.provider.send('evm_setIntervalMining', [5_000]);
   await writeFile('./.forked.env', data);
 }
 

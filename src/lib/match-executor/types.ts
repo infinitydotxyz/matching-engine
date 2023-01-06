@@ -1,6 +1,6 @@
 import { BigNumberish } from 'ethers';
 
-import { ChainNFTs, ChainOBOrder, OrderSource } from '@infinityxyz/lib/types/core';
+import { ChainNFTs, ChainOBOrder } from '@infinityxyz/lib/types/core';
 
 export interface Call {
   /**

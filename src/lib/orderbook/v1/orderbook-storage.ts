@@ -23,7 +23,7 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
    * ordered by the matches max gas price
    */
   get matchesByGasPriceOrderedSetKey() {
-    return `orderbook:${this.version}:chain:${this._chainId}:order-matches:by-gas-price:`;
+    return `orderbook:${this.version}:chain:${this._chainId}:order-matches:by-gas-price`;
   }
 
   /**
@@ -49,20 +49,20 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
     const scope = 'token-orders';
     const side = 'sell';
 
-    return `scope:${scope}:complication:${constraints.complication}:currency:${constraints.currency}:side:${side}:collection:${constraints.collection}:tokenId:${constraints.tokenId}`;
+    return `scope:${scope}:complication:${constraints.complication}:side:${side}:collection:${constraints.collection}:tokenId:${constraints.tokenId}`;
   }
 
   getTokenOffersSet(constraints: { complication: string; currency: string; collection: string; tokenId: string }) {
     const scope = 'token-orders';
     const side = 'buy';
-    return `scope:${scope}:complication:${constraints.complication}:currency:${constraints.currency}:side:${side}:collection:${constraints.collection}:tokenId:${constraints.tokenId}`;
+    return `scope:${scope}:complication:${constraints.complication}:side:${side}:collection:${constraints.collection}:tokenId:${constraints.tokenId}`;
   }
 
   getCollectionTokenListingsSet(constraints: { complication: string; currency: string; collection: string }) {
     const scope = 'collection-token-orders';
     const side = 'sell';
 
-    return `scope:${scope}:complication:${constraints.complication}:currency:${constraints.currency}:side:${side}:collection:${constraints.collection}`;
+    return `scope:${scope}:complication:${constraints.complication}:side:${side}:collection:${constraints.collection}`;
   }
 
   getFullOrderKey(id: string) {
@@ -78,13 +78,13 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
     const scope = 'collection-token-orders';
     const side = 'buy';
 
-    return `scope:${scope}:complication:${constraints.complication}:currency:${constraints.currency}:side:${side}:collection:${constraints.collection}`;
+    return `scope:${scope}:complication:${constraints.complication}:side:${side}:collection:${constraints.collection}`;
   }
 
   getCollectionWideOffersSet(constraints: { complication: string; currency: string; collection: string }) {
     const scope = 'collection-wide-orders';
     const side = 'buy';
-    return `scope:${scope}:complication:${constraints.complication}:currency:${constraints.currency}:side:${side}:collection:${constraints.collection}`;
+    return `scope:${scope}:complication:${constraints.complication}:side:${side}:collection:${constraints.collection}`;
   }
 
   constructor(protected _db: Redis, protected _chainId: ChainId) {

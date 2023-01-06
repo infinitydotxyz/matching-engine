@@ -1,6 +1,4 @@
-import { ethers } from 'ethers';
-
-import { DEFAULT_FLASHBOTS_RELAY, FlashbotsBundleProvider } from '@flashbots/ethers-provider-bundle';
+import { createMatch } from 'create-match';
 
 import { config, getNetworkConfig } from '@/config';
 
@@ -57,11 +55,21 @@ async function main() {
     enableMetrics: false
   });
 
+  logger.info('process', 'Creating matches');
+  const matches = await createMatch(config.env.chainId);
+
+  if (matches) {
+    for (const match of matches) {
+      await orderRelay.add(match.infinityJob);
+      await orderRelay.add(match.seaportJob);
+    }
+  }
+
   logger.info('process', 'Starting matching engine');
   const matchingEnginePromise = matchingEngine.run();
 
   logger.info('process', 'Starting order relay');
-  const orderRelayPromise = orderRelay.run();
+  const orderRelayPromise = orderRelay.run(false);
 
   logger.info('process', 'Starting execution engine');
   const executionEnginePromise = executionEngine.run();

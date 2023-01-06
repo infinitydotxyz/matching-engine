@@ -53,10 +53,8 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
     const validMatches = await this.processMatches(order, matches);
     const orderId = order.id;
 
+    logger.log('matching-engine', `found ${validMatches.length} valid matches for order ${order.id}`);
     if (validMatches.length > 0) {
-      logger.log('matching-engine', `found ${validMatches.length} valid matches for order ${order.id}`);
-      const pipeline = this._db.pipeline();
-
       type DbMatch = {
         otherOrderIds: Set<string>;
         matchIds: Set<string>;
@@ -86,6 +84,8 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
         return acc;
       }, {} as { [orderId: string]: DbMatch });
 
+      const pipeline = this._db.pipeline();
+
       for (const [orderId, { matchIds }] of Object.entries(dbMatches)) {
         const orderMatchesSet = this._storage.getOrderMatchesSet(orderId);
         pipeline.sadd(orderMatchesSet, ...matchIds);
@@ -96,10 +96,21 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
         const matchKey = this._storage.getFullMatchKey(match.matchId);
         pipeline.zadd(this._storage.matchesByGasPriceOrderedSetKey, match.maxGasPriceGwei, match.matchId);
         pipeline.set(matchKey, JSON.stringify(match));
+        console.log(
+          `Saving match for: ${match.maxGasPriceGwei} at ${match.matchId} in ordered set ${this._storage.matchesByGasPriceOrderedSetKey}`
+        );
         // TODO how do we clean this up
       }
 
-      await pipeline.exec();
+      const res = await pipeline.exec();
+
+      if (res) {
+        for (const [err] of res) {
+          if (err) {
+            logger.error('matching-engine', `failed to save matches for order ${order.id} ${err}`);
+          }
+        }
+      }
     }
 
     return {
@@ -406,6 +417,13 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
           const maxSourceGasPriceGwei = parseFloat(formatUnits(maxSourceGasPriceWei, 'gwei'));
           maxGasPriceGwei = Math.min(maxSourceGasPriceGwei, executionPrices.maxGasPriceGwei);
         }
+
+        // TODO verify currency matches?
+
+        logger.log(
+          'matching-engine',
+          `match found: ${offer.id} -> ${listing.id} (maxGasPriceGwei: ${maxGasPriceGwei})`
+        );
 
         validMatches.push({
           matchId: `${offer.id}:${listing.id}`,

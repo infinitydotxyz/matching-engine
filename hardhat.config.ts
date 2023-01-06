@@ -14,14 +14,18 @@ const config: HardhatUserConfig = {
         auto: false,
         interval: 15_000
       },
+      throwOnCallFailures: true,
+      throwOnTransactionFailures: true,
       forking: {
-        enabled: true,
-        url: 'https://eth-mainnet.g.alchemy.com/v2/RJUo8ydCEfcC9L2mBWgHfbudhC-tEq69'
+        url: process.env.HTTP_PROVIDER_URL ?? '',
+        blockNumber: 16336200
       }
     },
     localhost: {
+      chainId: 1,
       url: 'http://127.0.0.1:8545/',
-      chainId: 1
+      throwOnCallFailures: true,
+      throwOnTransactionFailures: true
     }
   },
   solidity: {
