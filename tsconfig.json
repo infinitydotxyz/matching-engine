@@ -24,6 +24,7 @@
     }
   },
   "include": ["src/**/*.ts"],
+  "exclude": ["hardhat.config.ts"],
   "ts-node": {
     "require": ["tsconfig-paths/register"]
   }

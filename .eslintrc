@@ -18,7 +18,7 @@
     "node": true,
     "jest": true
   },
-  "ignorePatterns": [".eslintrc.js", "jest.config.ts", "**/*.spec", "dist"],
+  "ignorePatterns": [".eslintrc.js", "jest.config.ts", "**/*.spec", "dist", "hardhat.config.ts"],
   "rules": {
     "@typescript-eslint/no-unsafe-return": "off",
     "@typescript-eslint/no-unsafe-call": "off",

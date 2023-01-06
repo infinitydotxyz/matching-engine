@@ -1,10 +1,17 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { BulkJobOptions, Job } from 'bullmq';
+import { BigNumber } from 'ethers/lib/ethers';
+import { formatEther, formatUnits } from 'ethers/lib/utils';
 import { Redis } from 'ioredis';
 
 import { ChainId } from '@infinityxyz/lib/types/core';
 
+import { logger } from '@/common/logger';
+import { config } from '@/config';
+import { Match } from '@/lib/match-executor/match/types';
 import { OrderbookV1 as OB } from '@/lib/orderbook';
+import { Order } from '@/lib/orderbook/v1';
+import { OrderData, OrderParams } from '@/lib/orderbook/v1/types';
 import { ProcessOptions } from '@/lib/process/types';
 
 import { AbstractMatchingEngine } from '../matching-engine.abstract';
@@ -19,9 +26,12 @@ export type MatchingEngineJob = { id: string; order: OB.Types.OrderParams };
 export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, MatchingEngineResult> {
   public readonly version: string;
 
-  protected _MATCH_LIMIT = 50;
+  protected _MATCH_LIMIT = 10;
 
-  public getOrderMatchesOrderedSetKey(orderId: string) {
+  /**
+   * temporary storage for order matches
+   */
+  protected _getOrderMatchesOrderedSetKey(orderId: string) {
     return `matching-engine:${this.version}:chain:${this._chainId}:order-matches:${orderId}`;
   }
 
@@ -40,22 +50,67 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
     const order = new OB.Order(job.data.order);
     const matches = await this.matchOrder(order);
 
+    const validMatches = await this.processMatches(order, matches);
     const orderId = order.id;
 
-    if (matches.length > 0) {
-      let pipeline = this._db.pipeline();
-      for (const match of matches) {
-        // TODO note the race condition here with an order getting deleted
-        pipeline = pipeline
-          .zadd(this._storage.getOrderMatchesOrderedSet(orderId), match.value, match.id)
-          .zadd(this._storage.getOrderMatchesOrderedSet(match.id), match.value, orderId);
-      }
-      await pipeline.exec();
-      // TODO submit to execution engine
+    logger.log('matching-engine', `found ${validMatches.length} valid matches for order ${order.id}`);
+    if (validMatches.length > 0) {
+      type DbMatch = {
+        otherOrderIds: Set<string>;
+        matchIds: Set<string>;
+      };
 
-      // execution engine should take an order id to begin executing
-      // build corresponding orders
-      // attempt to execute them
+      const dbMatches = validMatches.reduce((acc, match) => {
+        if (match.listing.id in acc) {
+          acc[match.listing.id].matchIds.add(match.offer.id);
+          acc[match.listing.id].otherOrderIds.add(match.offer.id);
+        } else {
+          acc[match.listing.id] = {
+            otherOrderIds: new Set(match.offer.id),
+            matchIds: new Set(match.matchId)
+          };
+        }
+
+        if (match.offer.id in acc) {
+          acc[match.offer.id].matchIds.add(match.listing.id);
+          acc[match.offer.id].otherOrderIds.add(match.listing.id);
+        } else {
+          acc[match.offer.id] = {
+            otherOrderIds: new Set(match.listing.id),
+            matchIds: new Set(match.matchId)
+          };
+        }
+
+        return acc;
+      }, {} as { [orderId: string]: DbMatch });
+
+      const pipeline = this._db.pipeline();
+
+      for (const [orderId, { matchIds }] of Object.entries(dbMatches)) {
+        const orderMatchesSet = this._storage.getOrderMatchesSet(orderId);
+        pipeline.sadd(orderMatchesSet, ...matchIds);
+        // TODO how do we clean this up
+      }
+
+      for (const match of validMatches) {
+        const matchKey = this._storage.getFullMatchKey(match.matchId);
+        pipeline.zadd(this._storage.matchesByGasPriceOrderedSetKey, match.maxGasPriceGwei, match.matchId);
+        pipeline.set(matchKey, JSON.stringify(match));
+        console.log(
+          `Saving match for: ${match.maxGasPriceGwei} at ${match.matchId} in ordered set ${this._storage.matchesByGasPriceOrderedSetKey}`
+        );
+        // TODO how do we clean this up
+      }
+
+      const res = await pipeline.exec();
+
+      if (res) {
+        for (const [err] of res) {
+          if (err) {
+            logger.error('matching-engine', `failed to save matches for order ${order.id} ${err}`);
+          }
+        }
+      }
     }
 
     return {
@@ -107,7 +162,7 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
 
     const activeOrdersSet = this._storage.activeOrdersOrderedSetKey;
 
-    const orderMatches = this.getOrderMatchesOrderedSetKey(order.id);
+    const orderMatches = this._getOrderMatchesOrderedSetKey(order.id);
 
     const matches = await new Promise<{ id: string; value: number }[]>((resolve, reject) => {
       this._db
@@ -156,7 +211,7 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
 
     const activeOrdersSet = this._storage.activeOrdersOrderedSetKey;
 
-    const orderMatches = this.getOrderMatchesOrderedSetKey(order.id);
+    const orderMatches = this._getOrderMatchesOrderedSetKey(order.id);
 
     const activeTokenOffers = `matching-engine:${this.version}:chain:${this._chainId}:tmp:${order.id}:type:active-token-offers`;
     const activeCollectionOffers = `matching-engine:${this.version}:chain:${this._chainId}:tmp:${order.id}:type:active-collection-offers`;
@@ -216,7 +271,6 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
         });
     });
 
-    // TODO handle pending orders
     return matches;
   }
 
@@ -229,7 +283,7 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
 
     const activeOrdersSet = this._storage.activeOrdersOrderedSetKey;
 
-    const orderMatches = this.getOrderMatchesOrderedSetKey(order.id);
+    const orderMatches = this._getOrderMatchesOrderedSetKey(order.id);
 
     const matches = await new Promise<{ id: string; value: number }[]>((resolve, reject) => {
       this._db
@@ -277,5 +331,152 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
       }
       return acc;
     }, [] as { id: string; value: number }[]);
+  }
+
+  protected async processMatches(order: OB.Order, matches: { id: string; value: number }[]) {
+    const mainFullOrderKey = this._storage.getFullOrderKey(order.id);
+    const mainFullOrderString = await this._db.get(mainFullOrderKey);
+    let mainOrder: OrderData | null;
+    try {
+      mainOrder = JSON.parse(mainFullOrderString ?? '') as OrderData;
+    } catch (err) {
+      // mainOrder not found
+      mainOrder = null;
+    }
+
+    if (!mainOrder) {
+      throw new Error('Main order not found');
+    }
+
+    const mainOrderParams = Order.getOrderParams(mainOrder.id, config.env.chainId, mainOrder.order);
+
+    const matchKeys = matches.map((match) => this._storage.getFullOrderKey(match.id));
+    const matchesStrings = matchKeys.length > 0 ? await this._db.mget(...matchKeys) : [];
+    const matchesWithFullData = matches.map((item, index) => {
+      let orderData: OrderData | null;
+      try {
+        orderData = JSON.parse(matchesStrings[index] ?? '') as OrderData;
+      } catch (err) {
+        orderData = null;
+      }
+      return {
+        fullOrderData: orderData,
+        matchData: item
+      };
+    });
+
+    const validMatches: Match[] = [];
+    for (const { matchData, fullOrderData: matchOrderData } of matchesWithFullData) {
+      if (!matchOrderData) {
+        logger.error('matching-engine', `order ${matchData.id} not found`);
+        continue;
+      }
+
+      const orderMatchParams = Order.getOrderParams(matchOrderData.id, config.env.chainId, matchOrderData.order);
+
+      const [offer, listing] = mainOrder.order.isSellOrder ? [matchOrderData, mainOrder] : [mainOrder, matchOrderData];
+
+      const [offerParams, listingParams] = mainOrder.order.isSellOrder
+        ? [orderMatchParams, mainOrderParams]
+        : [mainOrderParams, orderMatchParams];
+
+      try {
+        const executionPrices = this._getExecutionCost(offerParams, listingParams);
+        if (executionPrices == null) {
+          continue;
+        }
+
+        let maxGasPriceGwei;
+
+        /**
+         * keep an ordered set of matches where the value is the max gas price (in gwei) that we can execute the trade at
+         */
+        if (executionPrices.isNative) {
+          // as long as the gas price of the offer is above the current gas price, we can execute this order
+          maxGasPriceGwei = executionPrices.maxGasPriceGwei;
+        } else {
+          /**
+           * the offer is native, the listing is non-native
+           *
+           * we can execute the trade if
+           * 1. the gas price of the offer is above the current gas price
+           * 2. the arbitrage available is above the current gas price * (gas usage + a buffer to pay for other broker expenses)
+           *
+           * let G1 := arb / (gas usage + a buffer)
+           * let G2 := gas price of the native offer
+           * max gas price = MIN(G1, G2);
+           */
+          const bufferGasUsage = 100_000;
+
+          const sourceGasUsage = mainOrder.source === 'infinity' ? matchOrderData.gasUsage : mainOrder.gasUsage;
+          const gasUsage = parseInt(sourceGasUsage, 10) + bufferGasUsage;
+          const maxSourceGasPriceWei = BigNumber.from(executionPrices.arbitrageWei).div(gasUsage);
+          const maxSourceGasPriceGwei = parseFloat(formatUnits(maxSourceGasPriceWei, 'gwei'));
+          maxGasPriceGwei = Math.min(maxSourceGasPriceGwei, executionPrices.maxGasPriceGwei);
+        }
+
+        // TODO verify currency matches?
+
+        logger.log(
+          'matching-engine',
+          `match found: ${offer.id} -> ${listing.id} (maxGasPriceGwei: ${maxGasPriceGwei})`
+        );
+
+        validMatches.push({
+          matchId: `${offer.id}:${listing.id}`,
+          maxGasPriceGwei,
+          isNative: executionPrices.isNative,
+          offer,
+          listing,
+          arbitrageWei: executionPrices.arbitrageWei
+        });
+      } catch (err) {
+        if (err instanceof Error) {
+          logger.error('matching-engine', `order ${matchData.id} has error. ${err.message}`);
+        } else {
+          logger.error('matching-engine', `order ${matchData.id} has error. ${err}`);
+        }
+      }
+    }
+    return validMatches;
+  }
+
+  protected _getExecutionCost(offer: OrderParams, listing: OrderParams) {
+    if (offer.side === 'sell') {
+      throw new Error('offer must be a buy order');
+    } else if (listing.side === 'buy') {
+      throw new Error('listing must be a sell order');
+    }
+
+    const offerPrice = BigNumber.from(offer.startPriceWei);
+    const listingPrice = BigNumber.from(listing.startPriceWei);
+
+    if (offerPrice.lt(listingPrice)) {
+      return null;
+    }
+
+    const bothNative = offer.isNative && listing.isNative;
+    if (bothNative) {
+      return {
+        maxGasPriceGwei: offer.maxTxGasPriceGwei,
+        executionPriceWei: listingPrice.toString(),
+        executionPriceEth: formatEther(listingPrice.toString()),
+        arbitrageWei: '0',
+        arbitrageEth: 0,
+        isNative: true
+      };
+    } else if (offer.isNative) {
+      const arbitrageWei = offerPrice.sub(listingPrice);
+      return {
+        maxGasPriceGwei: offer.maxTxGasPriceGwei,
+        executionPriceWei: offerPrice.toString(),
+        executionPriceEth: formatEther(offerPrice.toString()),
+        arbitrageWei: arbitrageWei.toString(),
+        arbitrageEth: formatEther(arbitrageWei.toString()),
+        isNative: false
+      };
+    } else if (listing.isNative) {
+      throw new Error('non-native offers are not yet supported');
+    }
   }
 }

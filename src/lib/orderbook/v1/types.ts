@@ -1,6 +1,15 @@
-import { ChainId, ChainOBOrder } from '@infinityxyz/lib/types/core';
+import { ChainId, ChainOBOrder, OrderSource, OrderStatus } from '@infinityxyz/lib/types/core';
 
-export type Status = 'active' | 'inactive' | 'filled' | 'cancelled' | 'expired';
+export type Status = OrderStatus;
+
+export interface OrderData {
+  id: string;
+  order: ChainOBOrder;
+  source: OrderSource;
+  sourceOrder: unknown;
+  gasUsage: string;
+  status: Status;
+}
 
 export type OrderParams = {
   id: string;

@@ -22,7 +22,7 @@ export abstract class AbstractProcess<T extends { id: string }, U> extends Event
     this._queue = new Queue(this.queueName, {
       connection: this._db.duplicate(),
       defaultJobOptions: {
-        attempts: 5,
+        attempts: options?.attempts ?? 5,
         backoff: {
           type: 'exponential',
           delay: 10_000

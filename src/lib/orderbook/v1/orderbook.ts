@@ -3,9 +3,9 @@ import { logger } from '@/common/logger';
 import { ErrorCode, OrderbookOrderError } from '../errors';
 import { AbstractOrderbook, OrderValidationResponse } from '../orderbook.abstract';
 import { Order } from './order';
-import { Status } from './types';
+import { OrderData } from './types';
 
-export class Orderbook extends AbstractOrderbook<Order, Status> {
+export class Orderbook extends AbstractOrderbook<Order, OrderData> {
   isOrderValid(order: Order): OrderValidationResponse {
     try {
       order.validate();

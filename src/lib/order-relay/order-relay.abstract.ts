@@ -51,21 +51,21 @@ export abstract class AbstractOrderRelay<T, U, JobData extends { id: string }, J
     super(db, queueName, options);
   }
 
-  emit<U extends keyof OrderRelayEventsListener>(event: U, ...args: Parameters<OrderRelayEventsListener[U]>): boolean {
+  emit<E extends keyof OrderRelayEventsListener>(event: E, ...args: Parameters<OrderRelayEventsListener[E]>): boolean {
     return super.emit(event, ...args);
   }
 
-  off<U extends keyof OrderRelayEventsListener>(eventName: U, listener: OrderRelayEventsListener[U]): this {
+  off<E extends keyof OrderRelayEventsListener>(eventName: E, listener: OrderRelayEventsListener[E]): this {
     super.off(eventName, listener);
     return this;
   }
 
-  on<U extends keyof OrderRelayEventsListener>(event: U, listener: OrderRelayEventsListener[U]): this {
+  on<E extends keyof OrderRelayEventsListener>(event: E, listener: OrderRelayEventsListener[E]): this {
     super.on(event, listener);
     return this;
   }
 
-  once<U extends keyof OrderRelayEventsListener>(event: U, listener: OrderRelayEventsListener[U]): this {
+  once<E extends keyof OrderRelayEventsListener>(event: E, listener: OrderRelayEventsListener[E]): this {
     super.once(event, listener);
     return this;
   }

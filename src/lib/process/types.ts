@@ -12,4 +12,5 @@ export interface ProcessOptions {
   enableMetrics?: boolean | MetricsOptions;
   concurrency?: number;
   debug?: boolean;
+  attempts?: number;
 }

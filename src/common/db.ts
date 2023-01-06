@@ -16,7 +16,7 @@ let _storage: admin.storage.Storage;
 export function _setupFirebase(): { db: FirebaseFirestore.Firestore; storage: admin.storage.Storage } {
   if (!db) {
     admin.initializeApp({
-      credential: admin.credential.cert(config.firebase.serviceAccount)
+      credential: admin.credential.cert(config.firebase.serviceAccount as admin.ServiceAccount)
     });
     db = admin.firestore();
     db.settings({ ignoreUndefinedProperties: true });
