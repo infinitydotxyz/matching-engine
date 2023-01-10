@@ -103,7 +103,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       ]);
       const nonPendingMatches = this._filterPendingOrders(matches, pendingOrders);
       const sortedMatches = this._sortMatches(nonPendingMatches);
-      const nonConflictingMatches = this._filterConflicting(sortedMatches);
+      const nonConflictingMatches = sortedMatches; // TODO validate matches
 
       logger.log(
         'execution-engine',
@@ -116,8 +116,6 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         return;
       }
       const { txn, receipt } = res;
-
-      console.log(JSON.stringify(receipt, null, 2));
 
       if (receipt.status === 1) {
         const gasUsage = receipt.gasUsed.toString();
@@ -243,56 +241,56 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     });
   }
 
-  protected _filterConflicting(matches: Match[]) {
-    const orderIds = new Set<string>();
-    // const wallets = new Set<string>();
+  // protected _filterConflicting(matches: Match[]) {
+  //   const orderIds = new Set<string>();
+  //   // const wallets = new Set<string>();
 
-    const tokens = new Set<string>();
+  //   const tokens = new Set<string>();
 
-    const nonConflictingMatches = matches.filter((match) => {
-      /**
-       * don't attempt to execute the same order multiple times
-       */
-      const listingId = match.listing.id;
-      const offerId = match.offer.id;
-      if (orderIds.has(listingId) || orderIds.has(offerId)) {
-        return false;
-      }
+  //   const nonConflictingMatches = matches.filter((match) => {
+  //     /**
+  //      * don't attempt to execute the same order multiple times
+  //      */
+  //     const listingId = match.listing.id;
+  //     const offerId = match.offer.id;
+  //     if (orderIds.has(listingId) || orderIds.has(offerId)) {
+  //       return false;
+  //     }
 
-      // TODO configure filtering on wallets to be based on transferred tokens and invalid balances
-      // /**
-      //  * limit each user to a single executing order at a time
-      //  */
-      // const listingMaker = match.listing.order.signer;
-      // const offerMaker = match.offer.order.signer;
-      // if (wallets.has(listingMaker) && listingMaker !== constants.AddressZero) {
-      //   return false;
-      // } else if (wallets.has(offerMaker) && offerMaker !== constants.AddressZero) {
-      //   return false;
-      // }
+  //     // TODO configure filtering on wallets to be based on transferred tokens and invalid balances
+  //     // /**
+  //     //  * limit each user to a single executing order at a time
+  //     //  */
+  //     // const listingMaker = match.listing.order.signer;
+  //     // const offerMaker = match.offer.order.signer;
+  //     // if (wallets.has(listingMaker) && listingMaker !== constants.AddressZero) {
+  //     //   return false;
+  //     // } else if (wallets.has(offerMaker) && offerMaker !== constants.AddressZero) {
+  //     //   return false;
+  //     // }
 
-      /**
-       * only attempt to execute orders for unique tokens
-       */
-      const listingTokens = match.listing.order.nfts.flatMap(({ collection, tokens }) => {
-        return tokens.map((token) => `${collection}:${token.tokenId}`);
-      });
-      for (const tokenString of listingTokens) {
-        if (tokens.has(tokenString)) {
-          return false;
-        }
-      }
+  //     /**
+  //      * only attempt to execute orders for unique tokens
+  //      */
+  //     const listingTokens = match.listing.order.nfts.flatMap(({ collection, tokens }) => {
+  //       return tokens.map((token) => `${collection}:${token.tokenId}`);
+  //     });
+  //     for (const tokenString of listingTokens) {
+  //       if (tokens.has(tokenString)) {
+  //         return false;
+  //       }
+  //     }
 
-      listingTokens.forEach((token) => tokens.add(token));
-      // wallets.add(listingMaker);
-      // wallets.add(offerMaker);
-      orderIds.add(listingId);
-      orderIds.add(offerId);
-      return true;
-    });
+  //     listingTokens.forEach((token) => tokens.add(token));
+  //     // wallets.add(listingMaker);
+  //     // wallets.add(offerMaker);
+  //     orderIds.add(listingId);
+  //     orderIds.add(offerId);
+  //     return true;
+  //   });
 
-    return nonConflictingMatches;
-  }
+  //   return nonConflictingMatches;
+  // }
 
   protected async _listen(signal: RedlockAbortSignal) {
     let cancel: (error: Error) => void = () => {

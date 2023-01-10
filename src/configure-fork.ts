@@ -9,7 +9,6 @@ import { InfinityExchangeABI } from '@infinityxyz/lib/abi';
 import { ChainId } from '@infinityxyz/lib/types/core';
 import { getExchangeAddress } from '@infinityxyz/lib/utils';
 import '@nomiclabs/hardhat-ethers';
-import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { Infinity, Seaport } from '@reservoir0x/sdk';
 import { Erc721, Weth } from '@reservoir0x/sdk/dist/common/helpers';
 
@@ -36,13 +35,12 @@ const deployTestErc721 = async (owner: ethers.Wallet) => {
 };
 
 const fundAccount = async (
-  from: SignerWithAddress,
+  from: ethers.Signer,
   to: ethers.Wallet | ethers.Signer | string,
   provider: ethers.providers.JsonRpcProvider
 ) => {
-  const funderBalance = await from.getBalance();
   const txn = await from.sendTransaction({
-    value: funderBalance.div(2).toString(),
+    value: parseEther('10').toString(),
     to: typeof to === 'string' ? to : await to.getAddress(),
     chainId: provider.network.chainId
   });

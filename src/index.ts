@@ -1,5 +1,3 @@
-import { createMatch } from 'create-match';
-
 import { config, getNetworkConfig } from '@/config';
 
 import { firestore, redis, redlock, storage } from './common/db';

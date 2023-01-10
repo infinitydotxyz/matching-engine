@@ -8,8 +8,10 @@ import MatchExecutorAbi from '@/common/abi/match-executor.json';
 import { logger } from '@/common/logger';
 
 import { OrderData } from '../orderbook/v1/types';
-import { Match } from './match/types';
+import { Match, MatchExecutionInfo } from './match/types';
+import { NonceProvider } from './nonce-provider/nonce-provider';
 import { Batch, Call, ExternalFulfillments, MatchOrders, MatchOrdersType } from './types';
+import { formatEth, getOBOrderPrice } from '@infinityxyz/lib/utils';
 
 export class MatchExecutor {
   protected get chain() {
@@ -18,9 +20,20 @@ export class MatchExecutor {
 
   protected _contract: ethers.Contract;
 
-  constructor(protected _chainId: ChainId, protected _address: string, protected _intermediary: ethers.Wallet) {
+  constructor(
+    protected _chainId: ChainId,
+    protected _address: string,
+    protected _intermediary: ethers.Wallet,
+    protected _nonceProvider: NonceProvider
+  ) {
     this._contract = new ethers.Contract(this._address, MatchExecutorAbi, this._intermediary);
   }
+
+
+  /**
+   * take matched orders
+   * verify they are matches
+   */
 
   getTxn(data: {
     batches: Batch[];
@@ -79,13 +92,17 @@ export class MatchExecutor {
   }
 
   async executeMatchesTxn(orderMatches: Match[]): Promise<{ batches: Batch[] }> {
-    const externalFulfillments: ExternalFulfillments = {
-      calls: [],
-      nftsToTransfer: []
-    };
-    const matches: MatchOrders[] = [];
+    // const externalFulfillments: ExternalFulfillments = {
+    //   calls: [],
+    //   nftsToTransfer: []
+    // };
+    // const matches: MatchOrders[] = [];
 
-    for (const match of orderMatches) {
+    const matchInfo: {
+      externalFulfillments?: ExternalFulfillments;
+      nativeMatches: MatchOrders[];
+      execInfo: MatchExecutionInfo;
+    }[] = orderMatches.map(async (match) => {
       logger.log('match-executor', `Executing match: ${match.matchId} Is Native: ${match.isNative}`);
       if (match.isNative) {
         const listing = match.listing;
@@ -96,41 +113,49 @@ export class MatchExecutor {
         }
         const matchOrders = await this._getMatch({ listing: match.listing, offer: match.offer });
 
-        matches.push(matchOrders);
-      } else {
-        if (match.listing.source === 'infinity') {
-          throw new Error('Expected listing to be non-native');
-        } else if (match.offer.source !== 'infinity') {
-          throw new Error('Expected offer to be native');
-        }
-
-        const listing = new Sdk.Seaport.Order(
-          this.chain,
-          match.listing.sourceOrder as Sdk.Seaport.Types.OrderComponents
-        );
-
-        const matchParams = listing.buildMatching();
-        const seaportExchange = new Sdk.Seaport.Exchange(this.chain);
-
-        const txnData = seaportExchange.fillOrderTx(this._address, listing, matchParams);
-
-        const call: Call = {
-          data: txnData.data,
-          value: txnData.value ?? '0',
-          to: txnData.to,
-          isPayable: txnData.value !== undefined && txnData.value !== '0'
+        return {
+          nativeMatches: matchOrders,
+          execInfo: {} // TODO
         };
-
-        const nftsToTransfer = match.listing.order.nfts;
-
-        // TODO check start/end price, is sell order, currency, complication
-        const matchOrders = await this._getMatch({ listing: match.listing, offer: match.offer });
-
-        externalFulfillments.calls.push(call);
-        externalFulfillments.nftsToTransfer.push(...nftsToTransfer);
-        matches.push(matchOrders);
       }
-    }
+
+      if (match.listing.source === 'infinity') {
+        throw new Error('Expected listing to be non-native');
+      } else if (match.offer.source !== 'infinity') {
+        throw new Error('Expected offer to be native');
+      }
+
+      const listing = new Sdk.Seaport.Order(this.chain, match.listing.sourceOrder as Sdk.Seaport.Types.OrderComponents);
+
+      const matchParams = listing.buildMatching();
+      const seaportExchange = new Sdk.Seaport.Exchange(this.chain);
+
+      const txnData = seaportExchange.fillOrderTx(this._address, listing, matchParams);
+
+      const call: Call = {
+        data: txnData.data,
+        value: txnData.value ?? '0',
+        to: txnData.to,
+        isPayable: txnData.value !== undefined && txnData.value !== '0'
+      };
+
+      const nftsToTransfer = match.listing.order.nfts;
+
+      // TODO check start/end price, is sell order, currency, complication
+      const matchOrders = await this._getMatch({ listing: match.listing, offer: match.offer });
+
+      return {
+        nativeMatches: matchOrders,
+        externalFulfillments: {
+          calls: [call],
+          nftsToTransfer
+        },
+        execInfo: {} // TODO
+      };
+    });
+
+    const external
+    const matches = matchInfo.flatMap((item) => item.nativeMatches);
 
     return {
       batches: [
@@ -142,7 +167,7 @@ export class MatchExecutor {
     };
   }
 
-  protected async _getMatch(orderMatch: { listing: OrderData; offer: OrderData }): Promise<MatchOrders> {
+  protected async _getMatch(orderMatch: { listing: OrderData; offer: OrderData }, currentBlockTimestamp: number, targetBlockTimestamp: number): Promise<MatchOrders> {
     const buy = orderMatch.offer.order;
     let sell = orderMatch.listing.order;
 
@@ -153,12 +178,32 @@ export class MatchExecutor {
     if (sell.signer === constants.AddressZero) {
       // TODO adjust price, start time/end time, currency
       // TODO we should validate orders after this
+      const startTimestamp = currentBlockTimestamp;
+      const twoMinutes = 2 * 60;
+      const endTimestamp = targetBlockTimestamp + twoMinutes;
 
-      const [numItems, , , , , nonce, maxGasPrice] = sell.constraints;
+      const buyStartPrice =buy.constraints[1].toString()
+      const buyEndPrice = buy.constraints[2].toString();
+
+      if(buyStartPrice !== buyEndPrice) {
+        throw new Error('Buy order price must be constant');
+      };
+
+      const targetPrice = getOBOrderPrice({ 
+        startPriceEth: formatEth(buyStartPrice),
+        endPriceEth: formatEth(buyEndPrice),
+        startTimeMs: parseInt(buy.constraints[3].toString(), 10) * 1000,
+        endTimeMs: parseInt(buy.constraints[4].toString(), 10) * 1000,
+      }, targetBlockTimestamp * 1000);
+
+      const constraints = [sell.constraints[0].toString(), targetPrice.toString(), targetPrice.toString(), startTimestamp.toString(), endTimestamp.toString(), '0', '0'];
+      
       const intermediateOrder = new Sdk.Infinity.Order(this.chain, {
         ...sell,
-        constraints: sell.constraints.map((item) => item.toString())
+        constraints,
       });
+
+      // TODO make sure we break even on the order
       const res = await this._signOrder(intermediateOrder);
       sell = res.signedOrder;
     }
@@ -171,21 +216,15 @@ export class MatchExecutor {
     };
   }
 
-  private nonce = 1; // TODO load nonce from db
-  protected async _getNonce() {
-    this.nonce += 1;
-    return Promise.resolve(this.nonce.toString());
-  }
-
   protected async _signOrder(unsignedOrder: Sdk.Infinity.Order) {
-    const nonce = await this._getNonce();
+    const nonce = await this._nonceProvider.getNonce();
     if (!unsignedOrder.isSellOrder) {
       throw new Error('Native match executor offers are not yet supported');
     }
 
-    unsignedOrder.signer = this._contract.address; // TODO will this cause an error?
-    unsignedOrder.nonce = nonce; // TODO
-    unsignedOrder.maxGasPrice = '0';
+    unsignedOrder.signer = this._contract.address;
+    unsignedOrder.nonce = nonce.toString();
+    unsignedOrder.maxGasPrice = '0'; // TODO update this if we support signing offers
 
     const intermediateOrderHash = unsignedOrder.hash();
     const { types, value, domain } = unsignedOrder.getSignatureData();
