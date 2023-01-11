@@ -13,20 +13,6 @@ export interface Match {
   listing: OrderData;
 }
 
-interface MatchValidity {
-  isValid: boolean;
-}
-export interface ValidMatch extends MatchValidity {
-  isValid: true;
-}
-
-export interface InvalidMatch extends MatchValidity {
-  isValid: false;
-  reason: string;
-}
-
-export type MatchValidityResult = ValidMatch | InvalidMatch;
-
 interface BaseMatchExecutionInfo {
   isNative: boolean;
 

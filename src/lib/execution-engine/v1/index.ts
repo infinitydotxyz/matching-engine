@@ -103,7 +103,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       ]);
       const nonPendingMatches = this._filterPendingOrders(matches, pendingOrders);
       const sortedMatches = this._sortMatches(nonPendingMatches);
-      const nonConflictingMatches = sortedMatches; // TODO validate matches
+      const nonConflictingMatches = sortedMatches; // TODO validate and select matches
 
       logger.log(
         'execution-engine',
