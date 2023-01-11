@@ -40,7 +40,7 @@ const fundAccount = async (
   provider: ethers.providers.JsonRpcProvider
 ) => {
   const txn = await from.sendTransaction({
-    value: parseEther('10').toString(),
+    value: parseEther('20').toString(),
     to: typeof to === 'string' ? to : await to.getAddress(),
     chainId: provider.network.chainId
   });
@@ -171,12 +171,12 @@ async function main() {
 
   const data = `
 INITIATOR_KEY="${initiator.privateKey}"
-MATCH_EXECUTOR_ADDRESS="${matchExecutorAddress}"
-EXCHANGE_ADDRESS="${exchangeAddress}"
+MATCH_EXECUTOR_ADDRESS="${matchExecutorAddress.toLowerCase()}"
+EXCHANGE_ADDRESS="${exchangeAddress.toLowerCase()}"
 CHAIN_ID="${chainId}"
 HTTP_PROVIDER_URL="${httpUrl}"
 WEBSOCKET_PROVIDER_URL="${websocketUrl}"
-ERC_721_ADDRESS="${erc721.address}"
+ERC_721_ADDRESS="${erc721.address.toLowerCase()}"
 ERC_721_OWNER_KEY="${erc721Owner.privateKey}"
 TEST_ACCOUNT_KEY="${test.privateKey}"
 `;

@@ -19,7 +19,7 @@ export class ForkedNetworkBroadcaster extends Broadcaster<Options> {
 
       return { receipt, txn: result };
     } catch (err) {
-      logger.error('forked-network-broadcaster', `${err}`);
+      logger.error('forked-network-broadcaster', `Failed to send/wait for txn ${err}`);
       throw err;
     }
   }

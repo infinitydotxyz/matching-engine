@@ -1,6 +1,6 @@
 import { BigNumberish, constants, ethers } from 'ethers';
 
-import { ChainId, ChainNFTs, OrderSource } from '@infinityxyz/lib/types/core';
+import { ChainId, ChainNFTs, ChainOBOrder, OrderSource } from '@infinityxyz/lib/types/core';
 import * as Sdk from '@reservoir0x/sdk';
 
 import { OrderData } from '@/lib/orderbook/v1/types';
@@ -15,7 +15,8 @@ export abstract class SourceOrder<RawOrder = never> {
 
   abstract readonly source: OrderSource;
 
-  protected _params: RawOrder;
+  protected _params: ChainOBOrder;
+  protected _sourceParams: RawOrder;
 
   protected eth: string;
   protected weth: string;
@@ -24,7 +25,8 @@ export abstract class SourceOrder<RawOrder = never> {
     protected _chainId: ChainId,
     protected _provider: ethers.providers.JsonRpcProvider
   ) {
-    this._params = this._orderData.sourceOrder as RawOrder;
+    this._sourceParams = this._orderData.sourceOrder as RawOrder;
+    this._params = this._orderData.order;
     this.eth = Sdk.Common.Addresses.Eth[this.chainId];
     this.weth = Sdk.Common.Addresses.Weth[this.chainId];
   }

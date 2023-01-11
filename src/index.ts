@@ -1,3 +1,5 @@
+import { createMatch } from 'create-match';
+
 import { config, getNetworkConfig } from '@/config';
 
 import { firestore, redis, redlock, storage } from './common/db';
@@ -32,6 +34,7 @@ async function main() {
     network.httpProvider,
     firestore
   );
+
   const matchExecutor = new MatchExecutor(
     config.env.chainId,
     network.matchExecutorAddress,
@@ -47,7 +50,7 @@ async function main() {
     network.websocketProvider,
     network.httpProvider,
     matchExecutor,
-    2,
+    config.broadcasting.blockOffset,
     network.broadcaster,
     {
       debug: config.env.debug,
@@ -77,6 +80,9 @@ async function main() {
   //     await orderRelay.add(match.seaportJob);
   //   }
   // }
+  // logger.info('process', 'Created matches');
+
+  const nonceProviderPromise = nonceProvider.run();
 
   logger.info('process', 'Starting matching engine');
   const matchingEnginePromise = matchingEngine.run();
@@ -87,7 +93,7 @@ async function main() {
   logger.info('process', 'Starting execution engine');
   const executionEnginePromise = executionEngine.run();
 
-  await Promise.all([matchingEnginePromise, orderRelayPromise, executionEnginePromise]);
+  await Promise.all([nonceProviderPromise, matchingEnginePromise, orderRelayPromise, executionEnginePromise]);
 }
 
 void main();

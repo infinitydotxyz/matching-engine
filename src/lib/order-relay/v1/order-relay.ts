@@ -94,7 +94,7 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
      * start processing jobs from the queue
      */
     const runPromise = super._run().catch((err: Error) => {
-      logger.error('order-relay', `Unexpected error: ${err.message}`);
+      logger.error('order-relay', `Order relay - Unexpected error: ${err.message}`);
     });
 
     if (sync) {

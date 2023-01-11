@@ -9,7 +9,8 @@ import { logger } from '@/common/logger';
 import { NonceProviderDoc } from './types';
 
 export class NonceProvider {
-  protected _nonce?: Promise<BigNumber> | BigNumber;
+  protected _nonceLoaded!: Promise<void>;
+  protected _nonce!: BigNumber;
 
   protected _ref: FirebaseFirestore.DocumentReference<NonceProviderDoc>;
 
@@ -53,14 +54,14 @@ export class NonceProvider {
           'nonce-provider',
           `Acquired nonce lock for account: ${this._accountAddress} exchange: ${this._exchangeAddress}`
         );
-        this._nonce = this._loadNonce();
+        this._nonceLoaded = this._loadNonce();
         this._signal = signal;
+        await this._nonceLoaded;
         await new Promise(() => {
           // Never resolve
         });
       })
       .catch((err) => {
-        this._nonce = Promise.reject(err);
         if (err instanceof ExecutionError) {
           logger.warn(
             'nonce-provider',
@@ -73,17 +74,23 @@ export class NonceProvider {
   }
 
   public async getNonce() {
+    this._checkSignal();
+    if (!this._nonceLoaded) {
+      throw new Error('Nonce provider not running');
+    }
+    await this._nonceLoaded;
+    const nonce = this._incrementNonce();
+
+    return nonce;
+  }
+
+  protected _incrementNonce() {
     if (!this._nonce) {
       throw new Error('Nonce provider not running');
     }
-    this._checkSignal();
-    const nonce = await this._nonce;
-    const nextNonce = nonce.add(1);
-    this._nonce = nextNonce;
-
+    this._nonce = this._nonce.add(1);
     this._saveNonce();
-
-    return nextNonce;
+    return this._nonce;
   }
 
   protected _saveNonce() {
@@ -93,7 +100,7 @@ export class NonceProvider {
       this._pendingSave = setTimeout(async () => {
         this._pendingSave = undefined;
         try {
-          nonce = await this._nonce;
+          nonce = this._nonce;
           this._checkSignal();
           if (!nonce) {
             throw new Error('Nonce not loaded');
@@ -135,6 +142,6 @@ export class NonceProvider {
     }
 
     const nonce = minNonce.gt(data.nonce) ? minNonce : BigNumber.from(data.nonce);
-    return nonce;
+    this._nonce = nonce;
   }
 }

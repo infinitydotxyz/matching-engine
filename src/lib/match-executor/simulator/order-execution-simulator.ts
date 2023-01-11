@@ -139,8 +139,19 @@ export class OrderExecutionSimulator {
 
     const setBalance = (account: string, balance: BigNumberish) => {
       if (isWeth) {
+        if (!(account in this._currentState.wethBalances.balances)) {
+          this._currentState.wethBalances.balances[account] = {
+            balance: '0'
+          };
+        }
         this._currentState.wethBalances.balances[account].balance = balance.toString();
       } else {
+        if (!(account in this._currentState.ethBalances.balances)) {
+          this._currentState.ethBalances.balances[account] = {
+            balance: '0'
+          };
+        }
+
         this._currentState.ethBalances.balances[account].balance = balance.toString();
       }
     };

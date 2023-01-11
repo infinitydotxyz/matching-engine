@@ -96,9 +96,6 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
         const matchKey = this._storage.getFullMatchKey(match.matchId);
         pipeline.zadd(this._storage.matchesByGasPriceOrderedSetKey, match.maxGasPriceGwei, match.matchId);
         pipeline.set(matchKey, JSON.stringify(match));
-        console.log(
-          `Saving match for: ${match.maxGasPriceGwei} at ${match.matchId} in ordered set ${this._storage.matchesByGasPriceOrderedSetKey}`
-        );
         // TODO how do we clean this up
       }
 

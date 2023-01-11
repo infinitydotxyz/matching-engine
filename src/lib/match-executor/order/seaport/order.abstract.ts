@@ -24,7 +24,7 @@ export abstract class SeaportOrder extends NonNativeOrder<Seaport.Types.OrderCom
 
   constructor(_orderData: OrderData, _chainId: ChainId, provider: ethers.providers.JsonRpcProvider) {
     super(_orderData, _chainId, provider);
-    this._order = new Seaport.Order(this.chainId, this._params);
+    this._order = new Seaport.Order(this.chainId, this._sourceParams);
   }
 
   getExternalFulfillment(taker: string): Promise<{ call: Call; nftsToTransfer: ChainNFTs[] }> {
@@ -106,15 +106,15 @@ export abstract class SeaportOrder extends NonNativeOrder<Seaport.Types.OrderCom
   }
 
   public get startTime() {
-    return this._params.startTime;
+    return this._sourceParams.startTime;
   }
 
   public get endTime() {
-    return this._params.endTime;
+    return this._sourceParams.endTime;
   }
 
   public get startPrice() {
-    const items = this.isSellOrder ? this._params.consideration : this._params.offer;
+    const items = this.isSellOrder ? this._sourceParams.consideration : this._sourceParams.offer;
 
     let price = BigNumber.from(0);
 
@@ -126,7 +126,7 @@ export abstract class SeaportOrder extends NonNativeOrder<Seaport.Types.OrderCom
   }
 
   public get endPrice() {
-    const items = this.isSellOrder ? this._params.consideration : this._params.offer;
+    const items = this.isSellOrder ? this._sourceParams.consideration : this._sourceParams.offer;
 
     let price = BigNumber.from(0);
 
@@ -150,15 +150,15 @@ export abstract class SeaportOrder extends NonNativeOrder<Seaport.Types.OrderCom
     }
 
     const zones = [ethers.constants.AddressZero, Seaport.Addresses.PausableZone[this.chainId]];
-    if (!zones.includes(this._params.zone)) {
-      throw new OrderError('unknown zone', ErrorCode.SeaportZone, this._params.zone, this.source, 'unsupported');
+    if (!zones.includes(this._sourceParams.zone)) {
+      throw new OrderError('unknown zone', ErrorCode.SeaportZone, this._sourceParams.zone, this.source, 'unsupported');
     }
 
-    if (this._params.conduitKey !== Seaport.Addresses.OpenseaConduitKey[this.chainId]) {
+    if (this._sourceParams.conduitKey !== Seaport.Addresses.OpenseaConduitKey[this.chainId]) {
       throw new OrderError(
         `invalid conduitKey`,
         ErrorCode.SeaportConduitKey,
-        `${this._params.conduitKey}`,
+        `${this._sourceParams.conduitKey}`,
         'seaport',
         'unsupported'
       );
@@ -168,7 +168,7 @@ export abstract class SeaportOrder extends NonNativeOrder<Seaport.Types.OrderCom
   }
 
   public get isERC721(): boolean {
-    const items = this.isSellOrder ? this._params.offer : this._params.consideration;
+    const items = this.isSellOrder ? this._sourceParams.offer : this._sourceParams.consideration;
     const erc721ItemTypes = new Set([Seaport.Types.ItemType.ERC721]); // don't include ERC721 with criteria
     return items.every((offerItem) => {
       return erc721ItemTypes.has(offerItem.itemType);
@@ -176,7 +176,7 @@ export abstract class SeaportOrder extends NonNativeOrder<Seaport.Types.OrderCom
   }
 
   public get currency(): string {
-    const items = this.isSellOrder ? this._params.consideration : this._params.offer;
+    const items = this.isSellOrder ? this._sourceParams.consideration : this._sourceParams.offer;
 
     let currency: string | undefined = undefined;
     for (const item of items) {
@@ -205,7 +205,7 @@ export abstract class SeaportOrder extends NonNativeOrder<Seaport.Types.OrderCom
   }
 
   public get nfts() {
-    const items = this.isSellOrder ? this._params.offer : this._params.consideration;
+    const items = this.isSellOrder ? this._sourceParams.offer : this._sourceParams.consideration;
 
     const nfts: { [collection: string]: { [tokenId: string]: number } } = {};
 
@@ -269,10 +269,10 @@ export abstract class SeaportOrder extends NonNativeOrder<Seaport.Types.OrderCom
       this._provider
     );
 
-    const makerConduit = BigNumber.from(this._params.conduitKey).eq(0)
+    const makerConduit = BigNumber.from(this._sourceParams.conduitKey).eq(0)
       ? Seaport.Addresses.Exchange[this.chainId]
       : await conduitController
-          .getConduit(this._params.conduitKey)
+          .getConduit(this._sourceParams.conduitKey)
           .then((result: { exists: boolean; conduit: string }) => {
             if (!result.exists) {
               throw new Error('invalid-conduit');
@@ -292,14 +292,14 @@ export abstract class SeaportOrder extends NonNativeOrder<Seaport.Types.OrderCom
         contract: this.currency,
         operator: makerConduit,
         from: taker,
-        to: this._params.offerer,
+        to: this._sourceParams.offerer,
         value: value.toString() // TODO consider fees
       };
     } else {
       currencyTransfer = {
         kind: TransferKind.ETH,
         from: taker,
-        to: this._params.offerer,
+        to: this._sourceParams.offerer,
         value: value.toString()
       };
     }
@@ -309,7 +309,7 @@ export abstract class SeaportOrder extends NonNativeOrder<Seaport.Types.OrderCom
         kind: TransferKind.ERC721,
         contract: collection,
         operator: makerConduit.toLowerCase(),
-        from: this._params.offerer,
+        from: this._sourceParams.offerer,
         to: taker,
         tokenId: token.tokenId
       }));

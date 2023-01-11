@@ -80,7 +80,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
      * start processing jobs from the queue
      */
     const runPromise = super._run().catch((err: Error) => {
-      logger.error('execution-engine', `Unexpected error: ${err.message}`);
+      logger.error('execution-engine', ` Execution engine - Unexpected error: ${err.message}`);
     });
     const listenPromise = this._redlock
       .using([blockListenerLockKey], lockDuration, async (signal) => {
@@ -140,7 +140,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
 
       logger.log(
         'execution-engine',
-        `Block ${job.data.targetBlockNumber}. Found ${matches.length} order matches before simulation.`
+        `Block ${job.data.targetBlockNumber}. Found ${sortedMatches.length} order matches before simulation.`
       );
 
       const nonConflictingMatches = await this.simulate(sortedMatches, targetBlock, {
@@ -165,6 +165,8 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         logger.log('execution-engine', `Block ${job.data.targetBlockNumber}. No matches found`);
         return;
       }
+
+      logger.log('execution-engine', `Block ${job.data.targetBlockNumber}. Txn generated.`);
 
       const { receipt, txn } = await this._broadcaster.broadcast(txnData);
 
@@ -262,6 +264,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
           const res = simulator.simulateMatch(item.verificationResult.data.nonNative);
           if (!res.isValid) {
             item.isExecutable = false;
+            logger.log('execution-engine', `Match ${item.match.id} is not executable Reason: ${res.error}`);
           }
         }
       }
@@ -272,6 +275,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         if (item.isExecutable && item.verificationResult.isValid) {
           const res = simulator.simulateMatch(item.verificationResult.data.native);
           if (!res.isValid) {
+            logger.log('execution-engine', `Match ${item.match.id} is not executable Reason: ${res.error}`);
             item.isExecutable = false;
             return { complete: false };
           }
@@ -321,7 +325,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
             queue
               .add(async () => {
                 const contract = new ethers.Contract(transfer.contract, ERC721ABI, batchProvider);
-                const owner = await contract.getOwner(transfer.tokenId, { blockTag: currentBlockNumber });
+                const owner = await contract.ownerOf(transfer.tokenId, { blockTag: currentBlockNumber });
                 initialState.erc721Balances[transfer.contract] = {
                   contract: transfer.contract,
                   balances: {
@@ -580,15 +584,14 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         if (err instanceof Error) {
           cancel(err);
         } else {
-          const errorMessage = `Unexpected error: ${err}`;
+          const errorMessage = `Block listener. Unexpected error: ${err}`;
           cancel(new Error(errorMessage));
         }
         return;
       }
 
-      const block = await this._rpcProvider.getBlock(blockNumber);
-
       try {
+        const block = await this._rpcProvider.getBlock(blockNumber);
         const currentGasPrice = await this._rpcProvider.getGasPrice();
         const currentGasPriceGwei = parseFloat(ethers.utils.formatUnits(currentGasPrice, 'gwei'));
         const job: ExecutionEngineJob = {
@@ -604,9 +607,9 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         await this.add(job);
       } catch (err) {
         if (err instanceof Error) {
-          logger.error('execution-engine', `Unexpected error: ${err.message}`);
+          logger.error('execution-engine', `Unexpected error while handling block: ${blockNumber} ${err.message}`);
         } else {
-          logger.error('execution-engine', `Unexpected error: ${err}`);
+          logger.error('execution-engine', `Unexpected error while handling block: ${blockNumber} ${err}`);
         }
       }
     };
