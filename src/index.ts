@@ -4,6 +4,7 @@ import { firestore, redis, redlock, storage } from './common/db';
 import { logger } from './common/logger';
 import { ExecutionEngine } from './lib/execution-engine/v1';
 import { MatchExecutor } from './lib/match-executor/match-executor';
+import { NonceProvider } from './lib/match-executor/nonce-provider/nonce-provider';
 import { MatchingEngine } from './lib/matching-engine/v1';
 import { OrderRelay } from './lib/order-relay/v1/order-relay';
 import { OrderbookV1 } from './lib/orderbook';
@@ -23,9 +24,23 @@ async function main() {
   const orderbookStorage = new OrderbookV1.OrderbookStorage(redis, config.env.chainId);
   const orderbook = new OrderbookV1.Orderbook(orderbookStorage);
 
-  const matchExecutor = new MatchExecutor(config.env.chainId, network.matchExecutorAddress, network.initiator);
+  const nonceProvider = new NonceProvider(
+    config.env.chainId,
+    network.initiator.address,
+    network.exchangeAddress,
+    redlock,
+    network.httpProvider,
+    firestore
+  );
+  const matchExecutor = new MatchExecutor(
+    config.env.chainId,
+    network.matchExecutorAddress,
+    network.initiator,
+    nonceProvider
+  );
 
   const executionEngine = new ExecutionEngine(
+    config.env.chainId,
     orderbookStorage,
     redis,
     redlock,

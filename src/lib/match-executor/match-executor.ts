@@ -1,17 +1,11 @@
-import { BigNumberish, constants, ethers } from 'ethers';
-import { defaultAbiCoder, splitSignature } from 'ethers/lib/utils';
+import { BigNumberish, ethers } from 'ethers';
 
-import { ChainId, ChainOBOrder } from '@infinityxyz/lib/types/core';
-import { formatEth, getOBOrderPrice } from '@infinityxyz/lib/utils';
-import * as Sdk from '@reservoir0x/sdk';
+import { ChainId } from '@infinityxyz/lib/types/core';
 
 import MatchExecutorAbi from '@/common/abi/match-executor.json';
-import { logger } from '@/common/logger';
 
-import { OrderData } from '../orderbook/v1/types';
-import { Match, MatchExecutionInfo } from './match/types';
 import { NonceProvider } from './nonce-provider/nonce-provider';
-import { Batch, Call, ExternalFulfillments, MatchOrders, MatchOrdersType } from './types';
+import { Batch, MatchOrders } from './types';
 
 export class MatchExecutor {
   protected get chain() {
@@ -29,66 +23,98 @@ export class MatchExecutor {
     this._contract = new ethers.Contract(this.address, MatchExecutorAbi, this.owner);
   }
 
-  /**
-   * take matched orders
-   * verify they are matches
-   */
-
-  getTxn(data: {
-    batches: Batch[];
-    maxFeePerGas: BigNumberish;
-    maxPriorityFeePerGas: BigNumberish;
-    gasLimit: BigNumberish;
-  }) {
-    let isNative = data.batches.length === 1;
-    for (const batch of data.batches) {
-      if (batch.externalFulfillments.calls.length > 0) {
-        isNative = false;
-      }
-      batch.matches = batch.matches.map((match) => {
-        for (let i = 0; i < match.buys.length; i += 1) {
-          const buy = match.buys[i];
-          const sell = match.sells[i];
-          if (buy.constraints[0] !== sell.constraints[0]) {
-            throw new Error('Buy and sell constraints do not match');
-          } else if (buy.execParams[0] !== sell.execParams[0]) {
-            throw new Error("Complications don't match");
-          } else if (buy.execParams[1] !== sell.execParams[1]) {
-            throw new Error("Currencies don't match");
-          }
-        }
-
-        if (match.constructs.length === 0) {
-          return {
-            buys: match.buys,
-            sells: match.sells,
-            matchType: match.matchType,
-            constructs: match.sells.map((item) => item.nfts)
-          };
-        }
-        return match;
-      });
-    }
-
-    logger.log('match-executor', `Batches ${JSON.stringify(data.batches, null, 2)}`);
-
-    const encoded = isNative
-      ? this._contract.interface.encodeFunctionData('executeNativeMatches', [data.batches[0].matches])
-      : this._contract.interface.encodeFunctionData('executeBrokerMatches', [data.batches]);
-
+  getNativeTxn(
+    matches: MatchOrders[],
+    maxFeePerGas: BigNumberish,
+    maxPriorityFeePerGas: BigNumberish,
+    gasLimit: BigNumberish
+  ) {
+    const encoded = this._contract.interface.encodeFunctionData('executeNativeMatches', [matches]);
     const txn = {
       from: this.owner.address,
       to: this.address,
-      maxFeePerGas: data.maxFeePerGas.toString(),
-      maxPriorityFeePerGas: data.maxPriorityFeePerGas.toString(),
-      gasLimit: data.gasLimit.toString(),
+      maxFeePerGas: maxFeePerGas.toString(),
+      maxPriorityFeePerGas: maxPriorityFeePerGas.toString(),
+      gasLimit: gasLimit.toString(),
       data: encoded
     };
 
-    return {
-      txn
-    };
+    return txn;
   }
+
+  getBrokerTxn(batch: Batch, maxFeePerGas: BigNumberish, maxPriorityFeePerGas: BigNumberish, gasLimit: BigNumberish) {
+    const encoded = this._contract.interface.encodeFunctionData('executeBrokerMatches', [[batch]]);
+    const txn = {
+      from: this.owner.address,
+      to: this.address,
+      maxFeePerGas: maxFeePerGas.toString(),
+      maxPriorityFeePerGas: maxPriorityFeePerGas.toString(),
+      gasLimit: gasLimit.toString(),
+      data: encoded
+    };
+    return txn;
+  }
+
+  // /**
+  //  * take matched orders
+  //  * verify they are matches
+  //  */
+
+  // getTxn(data: {
+  //   batches: Batch[];
+  //   maxFeePerGas: BigNumberish;
+  //   maxPriorityFeePerGas: BigNumberish;
+  //   gasLimit: BigNumberish;
+  // }) {
+  //   // let isNative = data.batches.length === 1;
+  //   // for (const batch of data.batches) {
+  //   //   if (batch.externalFulfillments.calls.length > 0) {
+  //   //     isNative = false;
+  //   //   }
+  //   //   batch.matches = batch.matches.map((match) => {
+  //   //     for (let i = 0; i < match.buys.length; i += 1) {
+  //   //       const buy = match.buys[i];
+  //   //       const sell = match.sells[i];
+  //   //       if (buy.constraints[0] !== sell.constraints[0]) {
+  //   //         throw new Error('Buy and sell constraints do not match');
+  //   //       } else if (buy.execParams[0] !== sell.execParams[0]) {
+  //   //         throw new Error("Complications don't match");
+  //   //       } else if (buy.execParams[1] !== sell.execParams[1]) {
+  //   //         throw new Error("Currencies don't match");
+  //   //       }
+  //   //     }
+
+  //   //     if (match.constructs.length === 0) {
+  //   //       return {
+  //   //         buys: match.buys,
+  //   //         sells: match.sells,
+  //   //         matchType: match.matchType,
+  //   //         constructs: match.sells.map((item) => item.nfts)
+  //   //       };
+  //   //     }
+  //   //     return match;
+  //   //   });
+  //   // }
+
+  //   logger.log('match-executor', `Batches ${JSON.stringify(data.batches, null, 2)}`);
+
+  //   // const encoded = isNative
+  //   //   ? this._contract.interface.encodeFunctionData('executeNativeMatches', [data.batches[0].matches])
+  //   //   : this._contract.interface.encodeFunctionData('executeBrokerMatches', [data.batches]);
+
+  //   const txn = {
+  //     from: this.owner.address,
+  //     to: this.address,
+  //     maxFeePerGas: data.maxFeePerGas.toString(),
+  //     maxPriorityFeePerGas: data.maxPriorityFeePerGas.toString(),
+  //     gasLimit: data.gasLimit.toString(),
+  //     data: encoded
+  //   };
+
+  //   return {
+  //     txn
+  //   };
+  // }
 
   // async executeMatchesTxn(orderMatches: Match[]): Promise<{ batches: Batch[] }> {
   //   // const externalFulfillments: ExternalFulfillments = {

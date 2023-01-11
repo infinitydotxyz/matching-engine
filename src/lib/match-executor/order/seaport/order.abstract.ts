@@ -1,6 +1,6 @@
 import { BigNumber, ethers } from 'ethers';
 
-import { ChainId } from '@infinityxyz/lib/types/core';
+import { ChainId, ChainNFTs } from '@infinityxyz/lib/types/core';
 import { Infinity, Common, Seaport } from '@reservoir0x/sdk';
 
 import SeaportConduitControllerAbi from '@/common/abi/seaport-conduit-controller.json';
@@ -8,6 +8,7 @@ import { OrderData } from '@/lib/orderbook/v1/types';
 
 import { NonNativeMatchExecutionInfo } from '../../match/types';
 import { Erc721Transfer, EthTransfer, TransferKind, WethTransfer } from '../../simulator/types';
+import { Call } from '../../types';
 import { ErrorCode } from '../errors/error-code';
 import { OrderCurrencyError, OrderDynamicError, OrderError, OrderKindError } from '../errors/order-error';
 import { NonNativeOrder } from '../non-native-order';
@@ -24,6 +25,22 @@ export abstract class SeaportOrder extends NonNativeOrder<Seaport.Types.OrderCom
   constructor(_orderData: OrderData, _chainId: ChainId, provider: ethers.providers.JsonRpcProvider) {
     super(_orderData, _chainId, provider);
     this._order = new Seaport.Order(this.chainId, this._params);
+  }
+
+  getExternalFulfillment(taker: string): Promise<{ call: Call; nftsToTransfer: ChainNFTs[] }> {
+    const exchange = new Seaport.Exchange(this.chainId);
+    const matchParams = this._order.buildMatching();
+    const txn = exchange.fillOrderTx(taker, this._order, matchParams);
+    const value = BigNumber.from(txn.value ?? '0');
+
+    const call: Call = {
+      to: txn.to,
+      data: txn.data,
+      value: value.toString(),
+      isPayable: value.gt(0)
+    };
+
+    return Promise.resolve({ call, nftsToTransfer: this._orderData.order.nfts });
   }
 
   /**

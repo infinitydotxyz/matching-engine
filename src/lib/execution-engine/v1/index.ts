@@ -9,7 +9,6 @@ import { ERC20ABI, ERC721ABI } from '@infinityxyz/lib/abi';
 import { ChainId } from '@infinityxyz/lib/types/core';
 import { ONE_MIN } from '@infinityxyz/lib/utils';
 import { Common } from '@reservoir0x/sdk';
-import { Erc721 } from '@reservoir0x/sdk/dist/common/helpers';
 
 import { logger } from '@/common/logger';
 import { config } from '@/config';
@@ -21,6 +20,7 @@ import { Match, NativeMatchExecutionInfo, NonNativeMatchExecutionInfo } from '@/
 import { OrderFactory } from '@/lib/match-executor/order/infinity';
 import { OrderExecutionSimulator } from '@/lib/match-executor/simulator/order-execution-simulator';
 import { ExecutionState, Transfer, TransferKind } from '@/lib/match-executor/simulator/types';
+import { Batch, ExternalFulfillments, MatchOrders } from '@/lib/match-executor/types';
 import { OrderbookStorage } from '@/lib/orderbook/v1';
 import { AbstractProcess } from '@/lib/process/process.abstract';
 import { ProcessOptions } from '@/lib/process/types';
@@ -154,12 +154,19 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         `Block ${job.data.targetBlockNumber}. Target gas price: ${targetGasPriceGwei} gwei. Found ${nonConflictingMatches.length} order matches after simulation.`
       );
 
-      const res = await this._generateTxn(nonConflictingMatches, targetBaseFeeGwei, targetPriorityFeeGwei);
-      if (!res) {
+      const txnData = await this._generateTxn(
+        nonConflictingMatches,
+        targetBaseFeeGwei,
+        targetPriorityFeeGwei,
+        job.data.currentBlockTimestamp
+      );
+
+      if (!txnData) {
         logger.log('execution-engine', `Block ${job.data.targetBlockNumber}. No matches found`);
         return;
       }
-      const { txn, receipt } = res;
+
+      const { receipt, txn } = await this._broadcaster.broadcast(txnData);
 
       if (receipt.status === 1) {
         const gasUsage = receipt.gasUsed.toString();
@@ -173,11 +180,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       }
     } catch (err) {
       logger.error('execution-engine', `failed to process job for block ${job.data.targetBlockNumber} ${err}`);
-      process.exit(1);
     }
-
-    await Promise.resolve();
-    return;
   }
 
   protected async simulate(
@@ -395,35 +398,43 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
   protected async _generateTxn(
     matches: (NativeMatch | NonNativeMatch)[],
     baseFeeGwei: number,
-    priorityFeeGwei: number
+    priorityFeeGwei: number,
+    currentBlockTimestamp: number
   ) {
     if (matches.length === 0) {
       return null;
     }
 
-    const hasNonNativeMatch = matches.find((item) => !item.isNative);
+    const baseFeeWei = parseUnits(baseFeeGwei.toString(), 'gwei');
+    const priorityFeeWei = parseUnits(priorityFeeGwei.toString(), 'gwei');
+    const maxFeePerGas = baseFeeWei.add(priorityFeeWei);
 
-    // const { batches } = await this._matchExecutor.executeMatchesTxn(matches);
+    const nonNativeMatches = matches.filter((item) => !item.isNative) as NonNativeMatch[];
 
-    // const baseFeeWei = parseUnits(baseFeeGwei.toString(), 'gwei');
-    // const priorityFeeWei = parseUnits(priorityFeeGwei.toString(), 'gwei');
-    // const maxFeePerGas = baseFeeWei.add(priorityFeeWei);
-    // const { txn } = this._matchExecutor.getTxn({
-    //   batches,
-    //   maxFeePerGas: maxFeePerGas,
-    //   maxPriorityFeePerGas: priorityFeeWei,
-    //   gasLimit: 30_000_000
-    // });
+    const matchOrders: MatchOrders[] = await Promise.all(
+      matches.map((item) => item.getMatchOrders(currentBlockTimestamp))
+    );
+    if (nonNativeMatches.length > 0) {
+      const matchExternalFulfillments = await Promise.all(
+        nonNativeMatches.map((item) => item.getExternalFulfillment(this._matchExecutor.address))
+      );
+      const externalFulfillments: ExternalFulfillments = {
+        calls: matchExternalFulfillments.map((item) => item.call),
+        nftsToTransfer: matchExternalFulfillments.flatMap((item) => item.nftsToTransfer)
+      };
 
-    // logger.log(`execution-engine`, `Txn: ${JSON.stringify(txn, null, 2)}`);
+      const batch: Batch = {
+        externalFulfillments,
+        matches: matchOrders
+      };
+      const txn = this._matchExecutor.getBrokerTxn(batch, maxFeePerGas, priorityFeeWei, 30_000_000);
 
-    // const res = await this._broadcaster.broadcast(txn);
+      return txn;
+    } else {
+      const txn = this._matchExecutor.getNativeTxn(matchOrders, maxFeePerGas, priorityFeeWei, 30_000_000);
 
-    // return {
-    //   batches,
-    //   txn: res.txn,
-    //   receipt: res.receipt
-    // };
+      return txn;
+    }
   }
 
   protected _filterPendingOrders(matches: Match[], pendingOrders: Set<string>) {
@@ -575,6 +586,8 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         return;
       }
 
+      const block = await this._rpcProvider.getBlock(blockNumber);
+
       try {
         const currentGasPrice = await this._rpcProvider.getGasPrice();
         const currentGasPriceGwei = parseFloat(ethers.utils.formatUnits(currentGasPrice, 'gwei'));
@@ -583,7 +596,9 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
           currentBlockNumber: blockNumber,
           currentGasPriceWei: currentGasPrice.toString(),
           currentGasPriceGwei,
-          targetBlockNumber: blockNumber + this._blockOffset
+          currentBlockTimestamp: block.timestamp,
+          targetBlockNumber: blockNumber + this._blockOffset,
+          targetBlockTimestamp: block.timestamp + this._blockOffset * 15 // TODO this should be configured based on the chain
         };
 
         await this.add(job);

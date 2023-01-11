@@ -8,6 +8,7 @@ import { ValidityResult } from '@/lib/utils/validity-result';
 
 import * as Infinity from '../order/infinity';
 import { Erc721Transfer, EthTransfer, TransferKind, WethTransfer } from '../simulator/types';
+import { MatchOrders, MatchOrdersType } from '../types';
 import { OrderMatch } from './order-match.abstract';
 import { Match, NativeMatchExecutionInfo } from './types';
 
@@ -19,6 +20,25 @@ export class NativeMatch extends OrderMatch {
     super(match);
     this._listing = orderFactory.createOrder(match.listing);
     this._offer = orderFactory.createOrder(match.offer);
+  }
+
+  async getMatchOrders(currentBlockTimestamp: number): Promise<MatchOrders> {
+    const offer = await this._offer.getChainOrder(this._listing.params, currentBlockTimestamp);
+    const listing = await this._listing.getChainOrder(this._offer.params, currentBlockTimestamp);
+
+    const matchType =
+      this._offer.nfts[0].tokens.length === 0 ? MatchOrdersType.OneToOneUnspecific : MatchOrdersType.OneToOneSpecific;
+
+    const constructs = matchType === MatchOrdersType.OneToOneUnspecific ? listing.nfts : [];
+
+    const matchOrders: MatchOrders = {
+      buys: [offer],
+      sells: [listing],
+      constructs: [constructs],
+      matchType
+    };
+
+    return matchOrders;
   }
 
   async verifyMatchAtTarget(
