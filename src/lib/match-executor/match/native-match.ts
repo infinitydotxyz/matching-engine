@@ -11,7 +11,7 @@ import { Erc721Transfer, EthTransfer, TransferKind, WethTransfer } from '../simu
 import { OrderMatch } from './order-match.abstract';
 import { Match, NativeMatchExecutionInfo } from './types';
 
-export class NativeMatch extends OrderMatch<NativeMatchExecutionInfo> {
+export class NativeMatch extends OrderMatch {
   protected _listing: Infinity.MatchExecutorOrder | Infinity.EndUserOrder;
   protected _offer: Infinity.MatchExecutorOrder | Infinity.EndUserOrder;
 
@@ -28,7 +28,7 @@ export class NativeMatch extends OrderMatch<NativeMatchExecutionInfo> {
       gasPrice: BigNumberish;
     },
     currentBlockTimestamp: number
-  ): Promise<ValidityResult<NativeMatchExecutionInfo>> {
+  ): Promise<ValidityResult<{ native: NativeMatchExecutionInfo }>> {
     if (this._listing.isMatchExecutorOrder && this._offer.isMatchExecutorOrder) {
       return {
         isValid: false,
@@ -134,7 +134,9 @@ export class NativeMatch extends OrderMatch<NativeMatchExecutionInfo> {
 
     return {
       isValid: true,
-      data: this._getExecutionInfo(offer, listing)
+      data: {
+        native: this._getExecutionInfo(offer, listing)
+      }
     };
   }
 

@@ -2,8 +2,6 @@ import { Redis } from 'ioredis';
 
 import { ChainId } from '@infinityxyz/lib/types/core';
 
-import { config } from '@/config';
-
 import { AbstractOrderbookStorage } from '../orderbook-storage.abstract';
 import { Order } from './order';
 import { OrderData } from './types';
@@ -106,7 +104,7 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
     let txn = this._db.multi();
 
     for (const item of items) {
-      const order = new Order(Order.getOrderParams(item.id, config.env.chainId, item.order));
+      const order = new Order(Order.getOrderParams(item.id, this._chainId, item.order));
       const orderItemSets = this._getOrderItemSets(order);
       const fullOrder = JSON.stringify(item);
       if (item.status === 'active') {

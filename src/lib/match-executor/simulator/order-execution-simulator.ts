@@ -1,6 +1,6 @@
 import { BigNumber, BigNumberish } from 'ethers';
 
-import { MatchExecutionInfo } from '../match/types';
+import { MatchExecutionInfo, NativeMatchExecutionInfo } from '../match/types';
 import { ExecutionError, ExecutionErrorCode } from './error';
 import { Erc721Transfer, EthTransfer, ExecutionState, Transfer, TransferKind, WethTransfer } from './types';
 
@@ -34,22 +34,25 @@ export class OrderExecutionSimulator {
     return BigNumber.from(accountApproval);
   }
 
+  reset() {
+    this._currentState = this._clone(this._initialState);
+  }
+
   simulateMatch(execInfo: MatchExecutionInfo) {
-    // TODO contract orders could result in unexpected reverts
     const preSimulationState = this._clone(this._currentState);
+
     try {
       if (!execInfo.isNative) {
         for (const transfer of execInfo.nonNativeExecutionTransfers) {
           this._handleTransfer(transfer);
         }
+      } else {
+        for (const transfer of execInfo.nativeExecutionTransfers) {
+          this._handleTransfer(transfer);
+        }
+        this._handleNonces(execInfo.orderNonces);
       }
-
-      for (const transfer of execInfo.nativeExecutionTransfers) {
-        this._handleTransfer(transfer);
-      }
-
       this._handleIds(execInfo.orderIds);
-      this._handleNonces(execInfo.orderNonces);
 
       return { isValid: true };
     } catch (err) {
@@ -76,7 +79,7 @@ export class OrderExecutionSimulator {
     }
   }
 
-  protected _handleNonces(nonces: MatchExecutionInfo['orderNonces']) {
+  protected _handleNonces(nonces: NativeMatchExecutionInfo['orderNonces']) {
     for (const [account, accountNonces] of Object.entries(nonces)) {
       for (const _nonce of accountNonces) {
         const nonce = _nonce.toString();

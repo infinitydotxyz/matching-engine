@@ -2,9 +2,13 @@ import { BigNumberish } from 'ethers';
 
 import { ValidityResult } from '@/lib/utils/validity-result';
 
-import { Match, MatchExecutionInfo } from './types';
+import { Match, NativeMatchExecutionInfo, NonNativeMatchExecutionInfo } from './types';
 
-export abstract class OrderMatch<T extends MatchExecutionInfo> {
+export abstract class OrderMatch {
+  get id() {
+    return this._match.matchId;
+  }
+
   get isListingNative() {
     return this._match.listing.source === 'infinity';
   }
@@ -17,6 +21,10 @@ export abstract class OrderMatch<T extends MatchExecutionInfo> {
     return this.isListingNative && this.isOfferNative;
   }
 
+  public get match() {
+    return this._match;
+  }
+
   constructor(protected _match: Match) {}
 
   abstract verifyMatchAtTarget(
@@ -26,5 +34,10 @@ export abstract class OrderMatch<T extends MatchExecutionInfo> {
       gasPrice: BigNumberish;
     },
     currentBlockTimestamp: number
-  ): Promise<ValidityResult<T>>;
+  ): Promise<
+    ValidityResult<
+      | { native: NativeMatchExecutionInfo; nonNative: NonNativeMatchExecutionInfo }
+      | { native: NativeMatchExecutionInfo }
+    >
+  >;
 }

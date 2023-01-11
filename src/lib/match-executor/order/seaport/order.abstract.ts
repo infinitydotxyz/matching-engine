@@ -302,8 +302,7 @@ export abstract class SeaportOrder extends NonNativeOrder<Seaport.Types.OrderCom
       isNative: false,
       sourceTxnGasUsage: this._orderData.gasUsage,
       nonNativeExecutionTransfers: [currencyTransfer, ...erc721Transfers],
-      orderIds: [this._orderData.id],
-      orderNonces: {}
+      orderIds: [this._orderData.id]
     };
   }
 }

@@ -16,17 +16,17 @@ export interface Match {
 interface BaseMatchExecutionInfo {
   isNative: boolean;
 
-  nativeExecutionTransfers: Transfer[];
-
   orderIds: string[];
-
-  orderNonces: {
-    [account: string]: BigNumberish[];
-  };
 }
 
 export interface NativeMatchExecutionInfo extends BaseMatchExecutionInfo {
   isNative: true;
+
+  nativeExecutionTransfers: Transfer[];
+
+  orderNonces: {
+    [account: string]: BigNumberish[];
+  };
 }
 
 export interface NonNativeMatchExecutionInfo extends BaseMatchExecutionInfo {

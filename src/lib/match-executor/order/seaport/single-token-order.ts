@@ -1,11 +1,3 @@
-import { BigNumber, constants, ethers } from 'ethers';
-
-import { Seaport } from '@reservoir0x/sdk';
-
-import SeaportConduitControllerAbi from '@/common/abi/seaport-conduit-controller.json';
-
-import { NonNativeMatchExecutionInfo } from '../../match/types';
-import { Erc721Transfer, EthTransfer, TransferKind, WethTransfer } from '../../simulator/types';
 import { ErrorCode } from '../errors/error-code';
 import { OrderError } from '../errors/order-error';
 import { SeaportOrder } from './order.abstract';

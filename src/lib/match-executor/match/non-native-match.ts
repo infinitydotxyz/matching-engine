@@ -9,9 +9,9 @@ import { Seaport } from '../order';
 import * as Infinity from '../order/infinity';
 import { NativeMatch } from './native-match';
 import { OrderMatch } from './order-match.abstract';
-import { Match, NonNativeMatchExecutionInfo } from './types';
+import { Match, NativeMatchExecutionInfo, NonNativeMatchExecutionInfo } from './types';
 
-export class NonNativeMatch extends OrderMatch<NonNativeMatchExecutionInfo> {
+export class NonNativeMatch extends OrderMatch {
   protected _nativeMatch: NativeMatch;
 
   protected _sourceOrder: Seaport.SingleTokenOrder;
@@ -58,7 +58,7 @@ export class NonNativeMatch extends OrderMatch<NonNativeMatchExecutionInfo> {
       gasPrice: BigNumberish;
     },
     currentBlockTimestamp: number
-  ): Promise<ValidityResult<NonNativeMatchExecutionInfo>> {
+  ): Promise<ValidityResult<{ native: NativeMatchExecutionInfo; nonNative: NonNativeMatchExecutionInfo }>> {
     const nativeResult = await this._nativeMatch.verifyMatchAtTarget(targetBlock, currentBlockTimestamp);
 
     if (!nativeResult.isValid) {
@@ -73,10 +73,8 @@ export class NonNativeMatch extends OrderMatch<NonNativeMatchExecutionInfo> {
     return {
       isValid: true,
       data: {
-        ...nonNativeExecInfo,
-        orderNonces: nativeResult.data.orderNonces,
-        orderIds: [...nativeResult.data.orderIds, ...nonNativeExecInfo.orderIds],
-        nativeExecutionTransfers: nativeResult.data.nativeExecutionTransfers
+        native: nativeResult.data.native,
+        nonNative: nonNativeExecInfo
       }
     };
   }
