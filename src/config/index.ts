@@ -115,7 +115,7 @@ export const config = {
     isForkingEnabled
   },
   orderRelay: {
-    enableSyncing: false
+    enableSyncing: true
   },
   broadcasting: {
     blockOffset: 2

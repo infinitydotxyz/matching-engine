@@ -5,7 +5,7 @@ import Redis from 'ioredis';
 import PQueue from 'p-queue';
 import Redlock, { ExecutionError, RedlockAbortSignal } from 'redlock';
 
-import { ERC20ABI, ERC721ABI } from '@infinityxyz/lib/abi';
+import { InfinityOBComplicationABI, ERC20ABI, ERC721ABI } from '@infinityxyz/lib/abi';
 import { ChainId } from '@infinityxyz/lib/types/core';
 import { ONE_MIN } from '@infinityxyz/lib/utils';
 import { Common } from '@reservoir0x/sdk';
@@ -154,6 +154,11 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         `Block ${job.data.targetBlockNumber}. Target gas price: ${targetGasPriceGwei} gwei. Found ${nonConflictingMatches.length} order matches after simulation.`
       );
 
+      logger.log(
+        'execution-engine',
+        `Block ${job.data.targetBlockNumber}. Valid matches: ${nonConflictingMatches.map((item) => item.id)}`
+      );
+
       const txnData = await this._generateTxn(
         nonConflictingMatches,
         targetBaseFeeGwei,
@@ -179,6 +184,10 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         );
       } else {
         logger.log('execution-engine', `Block ${job.data.targetBlockNumber}. Txn ${txn.hash} execution failed`);
+        logger.log(
+          'execution-engine',
+          `Block ${job.data.targetBlockNumber}. Txn ${txn.hash} receipt: ${JSON.stringify(receipt, null, 2)}`
+        );
       }
     } catch (err) {
       logger.error('execution-engine', `failed to process job for block ${job.data.targetBlockNumber} ${err}`);
@@ -348,7 +357,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
           if (!ids.has(balanceId)) {
             queue
               .add(async () => {
-                const wethBalance = (await wethContract.getBalance(transfer.from, {
+                const wethBalance = (await wethContract.balanceOf(transfer.from, {
                   blockTag: currentBlockNumber
                 })) as BigNumberish;
                 initialState.wethBalances.balances[transfer.from] = {
@@ -363,7 +372,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
           if (!ids.has(allowanceId)) {
             queue
               .add(async () => {
-                const allowance = (await wethContract.getAllowance(transfer.from, transfer.operator, {
+                const allowance = (await wethContract.allowance(transfer.from, transfer.operator, {
                   blockTag: currentBlockNumber
                 })) as BigNumberish;
                 initialState.wethBalances.allowances[transfer.from] = {
@@ -418,6 +427,14 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     const matchOrders: MatchOrders[] = await Promise.all(
       matches.map((item) => item.getMatchOrders(currentBlockTimestamp))
     );
+    console.log(JSON.stringify(matchOrders, null, 2));
+
+    for (const order of matchOrders) {
+      const complicationAddress = order.sells[0].execParams[0];
+      const complication = new ethers.Contract(complicationAddress, InfinityOBComplicationABI, this._rpcProvider);
+      const result = await complication.canExecMatchOrder(order.sells[0], order.buys[0], order.constructs[0]);
+      console.log(`Can exec order ${JSON.stringify(result)}`);
+    }
     if (nonNativeMatches.length > 0) {
       const matchExternalFulfillments = await Promise.all(
         nonNativeMatches.map((item) => item.getExternalFulfillment(this._matchExecutor.address))

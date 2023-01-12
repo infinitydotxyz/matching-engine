@@ -94,12 +94,12 @@ export class NativeMatch extends OrderMatch {
         isValid: false,
         reason: 'Listing has extra params'
       };
-    } else if (offer.execParams[0] !== listing.execParams[0]) {
+    } else if (offer.execParams[1] !== listing.execParams[1]) {
       return {
         isValid: false,
         reason: 'Listing and offer have different currencies'
       };
-    } else if (offer.execParams[1] !== listing.execParams[1]) {
+    } else if (offer.execParams[0] !== listing.execParams[0]) {
       return {
         isValid: false,
         reason: 'Listing and offer have different complications'
@@ -161,7 +161,7 @@ export class NativeMatch extends OrderMatch {
   }
 
   protected _getExecutionInfo(offer: ChainOBOrder, listing: ChainOBOrder): NativeMatchExecutionInfo {
-    const currency = listing.execParams[0];
+    const currency = listing.execParams[1];
     const wethAddress = Common.Addresses.Weth[parseInt(this._chainId, 10)];
     const isWeth = currency === wethAddress;
 

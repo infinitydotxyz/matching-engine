@@ -44,7 +44,7 @@ export abstract class Order extends SourceOrder<ChainOBOrder> {
   }
 
   get currency() {
-    return this._params.execParams[0];
+    return this._params.execParams[1];
   }
 
   get nfts() {
@@ -71,7 +71,7 @@ export abstract class Order extends SourceOrder<ChainOBOrder> {
   }
 
   public get complication() {
-    return this._params.execParams[1];
+    return this._params.execParams[0];
   }
 
   public get maxGasPrice() {
@@ -88,7 +88,7 @@ export abstract class Order extends SourceOrder<ChainOBOrder> {
       throw new OrderError(
         'invalid complication',
         ErrorCode.InfinityComplication,
-        this._params.execParams[1],
+        this._params.execParams[0],
         'infinity',
         'unsupported'
       );

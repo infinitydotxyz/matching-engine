@@ -55,18 +55,18 @@ export class MatchExecutorOrder extends Order {
   }
 
   set currency(currency: string) {
-    this._params.execParams[0] = currency;
+    this._params.execParams[1] = currency;
   }
 
   set complication(complication: string) {
-    this._params.execParams[1] = complication;
+    this._params.execParams[0] = complication;
   }
 
   protected _matchOrder(data: Pick<ChainOBOrder, 'constraints' | 'execParams'>, currentBlockTimestamp: number) {
     const { constraints, execParams } = data;
     const [, startPrice, endPrice] = constraints;
 
-    const [currency, complication] = execParams;
+    const [complication, currency] = execParams;
 
     this.startPrice = startPrice;
     this.endPrice = endPrice;
