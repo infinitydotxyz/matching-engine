@@ -8,6 +8,7 @@ import { Erc721 } from '@reservoir0x/sdk/dist/common/helpers';
 
 import { logger } from '@/common/logger';
 import { ForkedNetworkBroadcaster } from '@/lib/broadcaster';
+import { FlashbotsBroadcaster } from '@/lib/broadcaster/flashbots-broadcaster';
 
 import * as devServiceAccount from './creds/nftc-dev.json';
 import * as prodServiceAccount from './creds/nftc-prod.json';
@@ -96,13 +97,14 @@ export const getNetworkConfig = async (chainId: ChainId) => {
       initiator,
       matchExecutorAddress: matchExecutorAddress,
       exchangeAddress: exchangeAddress,
-      flashbots: {
-        blockOffset: 2,
-        provider: flashbotsProvider
-      },
       httpProvider,
       websocketProvider,
-      broadcaster: new ForkedNetworkBroadcaster(chainId, chainIdInt, { wallet: initiator, provider: httpProvider }) // TODO add flashbots
+      broadcaster: new FlashbotsBroadcaster(chainId, chainIdInt, {
+        authSigner,
+        provider: httpProvider,
+        flashbotsProvider: flashbotsProvider,
+        allowReverts: false
+      })
     };
   }
 };

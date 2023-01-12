@@ -122,10 +122,19 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
           txn = txn.zrem(set, item.id);
         }
 
-        // delete the order matches for this order
-        // TODO execution engine will handle removing invalid matches from other orders?
-        // const orderMatches = this.getOrderMatchesOrderedSet(item.id);
-        // txn = txn.del(orderMatches);
+        const orderMatchesSet = this.getOrderMatchesSet(item.id);
+        /**
+         * delete the set,
+         * for every order match in the set, delete the full match
+         */
+        const matches = await this._db.zrange(orderMatchesSet, 0, -1);
+        txn = txn.del(matches.map(this.getFullMatchKey.bind(this)));
+        txn = txn.zrem(this.matchesByGasPriceOrderedSetKey, ...matches);
+        for (const match of matches) {
+          const matchOrderMatchesSet = this.getOrderMatchesSet(match);
+          txn = txn.zrem(matchOrderMatchesSet, item.id);
+        }
+        txn = txn.del(orderMatchesSet);
       }
     }
     await txn.exec();

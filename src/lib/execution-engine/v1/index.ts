@@ -5,7 +5,7 @@ import Redis from 'ioredis';
 import PQueue from 'p-queue';
 import Redlock, { ExecutionError, RedlockAbortSignal } from 'redlock';
 
-import { InfinityOBComplicationABI, ERC20ABI, ERC721ABI } from '@infinityxyz/lib/abi';
+import { ERC20ABI, ERC721ABI } from '@infinityxyz/lib/abi';
 import { ChainId } from '@infinityxyz/lib/types/core';
 import { ONE_MIN } from '@infinityxyz/lib/utils';
 import { Common } from '@reservoir0x/sdk';
@@ -173,20 +173,36 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
 
       logger.log('execution-engine', `Block ${job.data.targetBlockNumber}. Txn generated.`);
 
-      const { receipt, txn } = await this._broadcaster.broadcast(txnData);
+      const { receipt } = await this._broadcaster.broadcast(txnData, {
+        targetBlock: {
+          blockNumber: job.data.targetBlockNumber,
+          timestamp: job.data.targetBlockTimestamp
+        },
+        currentBlock: {
+          blockNumber: job.data.currentBlockNumber,
+          timestamp: job.data.currentBlockTimestamp
+        }
+      });
 
       if (receipt.status === 1) {
         const gasUsage = receipt.gasUsed.toString();
         await this._savePendingMatches(nonConflictingMatches.map((item) => item.match));
         logger.log(
           'execution-engine',
-          `Block ${job.data.targetBlockNumber}. Txn ${txn.hash} executed successfully. Gas used: ${gasUsage}`
+          `Block ${job.data.targetBlockNumber}. Txn ${receipt.transactionHash} executed successfully. Gas used: ${gasUsage}`
         );
       } else {
-        logger.log('execution-engine', `Block ${job.data.targetBlockNumber}. Txn ${txn.hash} execution failed`);
         logger.log(
           'execution-engine',
-          `Block ${job.data.targetBlockNumber}. Txn ${txn.hash} receipt: ${JSON.stringify(receipt, null, 2)}`
+          `Block ${job.data.targetBlockNumber}. Txn ${receipt.transactionHash} execution failed`
+        );
+        logger.log(
+          'execution-engine',
+          `Block ${job.data.targetBlockNumber}. Txn ${receipt.transactionHash} receipt: ${JSON.stringify(
+            receipt,
+            null,
+            2
+          )}`
         );
       }
     } catch (err) {
@@ -427,14 +443,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     const matchOrders: MatchOrders[] = await Promise.all(
       matches.map((item) => item.getMatchOrders(currentBlockTimestamp))
     );
-    console.log(JSON.stringify(matchOrders, null, 2));
 
-    for (const order of matchOrders) {
-      const complicationAddress = order.sells[0].execParams[0];
-      const complication = new ethers.Contract(complicationAddress, InfinityOBComplicationABI, this._rpcProvider);
-      const result = await complication.canExecMatchOrder(order.sells[0], order.buys[0], order.constructs[0]);
-      console.log(`Can exec order ${JSON.stringify(result)}`);
-    }
     if (nonNativeMatches.length > 0) {
       const matchExternalFulfillments = await Promise.all(
         nonNativeMatches.map((item) => item.getExternalFulfillment(this._matchExecutor.address))
@@ -497,7 +506,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       'REV',
       'LIMIT',
       0,
-      1000
+      10_000
     );
 
     const fullMatchKeys = res.map(this._storage.getFullMatchKey.bind(this._storage));
@@ -535,57 +544,6 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       return preferB;
     });
   }
-
-  // protected _filterConflicting(matches: Match[]) {
-  //   const orderIds = new Set<string>();
-  //   // const wallets = new Set<string>();
-
-  //   const tokens = new Set<string>();
-
-  //   const nonConflictingMatches = matches.filter((match) => {
-  //     /**
-  //      * don't attempt to execute the same order multiple times
-  //      */
-  //     const listingId = match.listing.id;
-  //     const offerId = match.offer.id;
-  //     if (orderIds.has(listingId) || orderIds.has(offerId)) {
-  //       return false;
-  //     }
-
-  //     // TODO configure filtering on wallets to be based on transferred tokens and invalid balances
-  //     // /**
-  //     //  * limit each user to a single executing order at a time
-  //     //  */
-  //     // const listingMaker = match.listing.order.signer;
-  //     // const offerMaker = match.offer.order.signer;
-  //     // if (wallets.has(listingMaker) && listingMaker !== constants.AddressZero) {
-  //     //   return false;
-  //     // } else if (wallets.has(offerMaker) && offerMaker !== constants.AddressZero) {
-  //     //   return false;
-  //     // }
-
-  //     /**
-  //      * only attempt to execute orders for unique tokens
-  //      */
-  //     const listingTokens = match.listing.order.nfts.flatMap(({ collection, tokens }) => {
-  //       return tokens.map((token) => `${collection}:${token.tokenId}`);
-  //     });
-  //     for (const tokenString of listingTokens) {
-  //       if (tokens.has(tokenString)) {
-  //         return false;
-  //       }
-  //     }
-
-  //     listingTokens.forEach((token) => tokens.add(token));
-  //     // wallets.add(listingMaker);
-  //     // wallets.add(offerMaker);
-  //     orderIds.add(listingId);
-  //     orderIds.add(offerId);
-  //     return true;
-  //   });
-
-  //   return nonConflictingMatches;
-  // }
 
   protected async _listen(signal: RedlockAbortSignal) {
     let cancel: (error: Error) => void = () => {

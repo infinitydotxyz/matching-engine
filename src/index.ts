@@ -40,7 +40,7 @@ async function main() {
     nonceProvider
   );
 
-  const executionEngine = new ExecutionEngine(
+  const executionEngine = new ExecutionEngine<unknown>(
     config.env.chainId,
     orderbookStorage,
     redis,
@@ -68,17 +68,6 @@ async function main() {
     concurrency: 1,
     enableMetrics: false
   });
-
-  // logger.info('process', 'Creating matches');
-  // const matches = await createMatch(config.env.chainId);
-
-  // if (matches) {
-  //   for (const match of matches) {
-  //     await orderRelay.add(match.infinityJob);
-  //     await orderRelay.add(match.seaportJob);
-  //   }
-  // }
-  // logger.info('process', 'Created matches');
 
   const nonceProviderPromise = nonceProvider.run();
 

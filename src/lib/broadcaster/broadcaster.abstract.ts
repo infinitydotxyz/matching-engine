@@ -1,4 +1,4 @@
-import { BigNumberish, Transaction, ethers } from 'ethers';
+import { BigNumberish, ethers } from 'ethers';
 
 import { ChainId } from '@infinityxyz/lib/types/core';
 
@@ -13,6 +13,17 @@ export interface Eip1559Txn {
   chainId: number;
 }
 
+export type BroadcastOptions = {
+  targetBlock: {
+    blockNumber: number;
+    timestamp: number;
+  };
+  currentBlock: {
+    timestamp: number;
+    blockNumber: number;
+  };
+};
+
 export abstract class Broadcaster<T> {
   get chainId() {
     return parseInt(this._chainId, 10);
@@ -21,8 +32,9 @@ export abstract class Broadcaster<T> {
   constructor(protected _chainId: ChainId, protected underlyingChainId: number, protected _options: T) {}
 
   abstract broadcast(
-    txn: Omit<Eip1559Txn, 'type' | 'chainId'>
-  ): Promise<{ receipt: ethers.providers.TransactionReceipt; txn: Transaction }>;
+    txn: Omit<Eip1559Txn, 'type' | 'chainId'>,
+    options: BroadcastOptions
+  ): Promise<{ receipt: ethers.providers.TransactionReceipt }>;
 
   protected _getFullTxn(txn: Omit<Eip1559Txn, 'type' | 'chainId'>): Eip1559Txn {
     return {
