@@ -201,7 +201,7 @@ contract MatchExecutor is IERC1271, IERC721Receiver, Ownable, Pausable {
         if (matchType == MatchExecutorTypes.MatchOrdersType.OneToOneSpecific) {
           exchange.matchOneToOneOrders(matches[i].buys, matches[i].sells);
         } else if (matchType == MatchExecutorTypes.MatchOrdersType.OneToOneUnspecific) {
-          exchange.matchOrders(matches[i].buys, matches[i].sells, matches[i].constructs);
+          exchange.matchOrders(matches[i].sells, matches[i].buys, matches[i].constructs);
         } else if (matchType == MatchExecutorTypes.MatchOrdersType.OneToMany) {
           if (matches[i].buys.length == 1) {
             exchange.matchOneToManyOrders(matches[i].buys[0], matches[i].sells);

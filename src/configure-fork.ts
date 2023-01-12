@@ -9,7 +9,6 @@ import { InfinityExchangeABI } from '@infinityxyz/lib/abi';
 import { ChainId } from '@infinityxyz/lib/types/core';
 import { getExchangeAddress } from '@infinityxyz/lib/utils';
 import '@nomiclabs/hardhat-ethers';
-import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { Infinity, Seaport } from '@reservoir0x/sdk';
 import { Erc721, Weth } from '@reservoir0x/sdk/dist/common/helpers';
 
@@ -36,13 +35,12 @@ const deployTestErc721 = async (owner: ethers.Wallet) => {
 };
 
 const fundAccount = async (
-  from: SignerWithAddress,
+  from: ethers.Signer,
   to: ethers.Wallet | ethers.Signer | string,
   provider: ethers.providers.JsonRpcProvider
 ) => {
-  const funderBalance = await from.getBalance();
   const txn = await from.sendTransaction({
-    value: funderBalance.div(2).toString(),
+    value: parseEther('20').toString(),
     to: typeof to === 'string' ? to : await to.getAddress(),
     chainId: provider.network.chainId
   });
@@ -173,12 +171,12 @@ async function main() {
 
   const data = `
 INITIATOR_KEY="${initiator.privateKey}"
-MATCH_EXECUTOR_ADDRESS="${matchExecutorAddress}"
-EXCHANGE_ADDRESS="${exchangeAddress}"
+MATCH_EXECUTOR_ADDRESS="${matchExecutorAddress.toLowerCase()}"
+EXCHANGE_ADDRESS="${exchangeAddress.toLowerCase()}"
 CHAIN_ID="${chainId}"
 HTTP_PROVIDER_URL="${httpUrl}"
 WEBSOCKET_PROVIDER_URL="${websocketUrl}"
-ERC_721_ADDRESS="${erc721.address}"
+ERC_721_ADDRESS="${erc721.address.toLowerCase()}"
 ERC_721_OWNER_KEY="${erc721Owner.privateKey}"
 TEST_ACCOUNT_KEY="${test.privateKey}"
 `;

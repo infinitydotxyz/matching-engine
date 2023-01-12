@@ -61,7 +61,7 @@ export function getOrder(
           : []
       }
     ],
-    execParams: [currency, complication],
+    execParams: [complication, currency],
     extraParams: constants.HashZero,
     sig: ''
   };

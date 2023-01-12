@@ -17,9 +17,9 @@ export class ForkedNetworkBroadcaster extends Broadcaster<Options> {
       const result = await this._options.wallet.connect(this._options.provider).sendTransaction(fullTxn);
       const receipt = await this._options.provider.waitForTransaction(result.hash, 1);
 
-      return { receipt, txn: result };
+      return { receipt };
     } catch (err) {
-      logger.error('forked-network-broadcaster', `${err}`);
+      logger.error('forked-network-broadcaster', `Failed to send/wait for txn ${err}`);
       throw err;
     }
   }

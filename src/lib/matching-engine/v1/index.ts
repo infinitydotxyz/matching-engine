@@ -89,17 +89,12 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
       for (const [orderId, { matchIds }] of Object.entries(dbMatches)) {
         const orderMatchesSet = this._storage.getOrderMatchesSet(orderId);
         pipeline.sadd(orderMatchesSet, ...matchIds);
-        // TODO how do we clean this up
       }
 
       for (const match of validMatches) {
         const matchKey = this._storage.getFullMatchKey(match.matchId);
         pipeline.zadd(this._storage.matchesByGasPriceOrderedSetKey, match.maxGasPriceGwei, match.matchId);
         pipeline.set(matchKey, JSON.stringify(match));
-        console.log(
-          `Saving match for: ${match.maxGasPriceGwei} at ${match.matchId} in ordered set ${this._storage.matchesByGasPriceOrderedSetKey}`
-        );
-        // TODO how do we clean this up
       }
 
       const res = await pipeline.exec();
@@ -414,8 +409,6 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
           const maxSourceGasPriceGwei = parseFloat(formatUnits(maxSourceGasPriceWei, 'gwei'));
           maxGasPriceGwei = Math.min(maxSourceGasPriceGwei, executionPrices.maxGasPriceGwei);
         }
-
-        // TODO verify currency matches?
 
         logger.log(
           'matching-engine',

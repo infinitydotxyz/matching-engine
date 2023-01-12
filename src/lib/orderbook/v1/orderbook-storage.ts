@@ -2,8 +2,6 @@ import { Redis } from 'ioredis';
 
 import { ChainId } from '@infinityxyz/lib/types/core';
 
-import { config } from '@/config';
-
 import { AbstractOrderbookStorage } from '../orderbook-storage.abstract';
 import { Order } from './order';
 import { OrderData } from './types';
@@ -106,7 +104,7 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
     let txn = this._db.multi();
 
     for (const item of items) {
-      const order = new Order(Order.getOrderParams(item.id, config.env.chainId, item.order));
+      const order = new Order(Order.getOrderParams(item.id, this._chainId, item.order));
       const orderItemSets = this._getOrderItemSets(order);
       const fullOrder = JSON.stringify(item);
       if (item.status === 'active') {
@@ -124,10 +122,19 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
           txn = txn.zrem(set, item.id);
         }
 
-        // delete the order matches for this order
-        // TODO execution engine will handle removing invalid matches from other orders?
-        // const orderMatches = this.getOrderMatchesOrderedSet(item.id);
-        // txn = txn.del(orderMatches);
+        const orderMatchesSet = this.getOrderMatchesSet(item.id);
+        /**
+         * delete the set,
+         * for every order match in the set, delete the full match
+         */
+        const matches = await this._db.zrange(orderMatchesSet, 0, -1);
+        txn = txn.del(matches.map(this.getFullMatchKey.bind(this)));
+        txn = txn.zrem(this.matchesByGasPriceOrderedSetKey, ...matches);
+        for (const match of matches) {
+          const matchOrderMatchesSet = this.getOrderMatchesSet(match);
+          txn = txn.zrem(matchOrderMatchesSet, item.id);
+        }
+        txn = txn.del(orderMatchesSet);
       }
     }
     await txn.exec();

@@ -1,11 +1,10 @@
-import { createMatch } from 'create-match';
-
 import { config, getNetworkConfig } from '@/config';
 
 import { firestore, redis, redlock, storage } from './common/db';
 import { logger } from './common/logger';
 import { ExecutionEngine } from './lib/execution-engine/v1';
 import { MatchExecutor } from './lib/match-executor/match-executor';
+import { NonceProvider } from './lib/match-executor/nonce-provider/nonce-provider';
 import { MatchingEngine } from './lib/matching-engine/v1';
 import { OrderRelay } from './lib/order-relay/v1/order-relay';
 import { OrderbookV1 } from './lib/orderbook';
@@ -25,16 +24,31 @@ async function main() {
   const orderbookStorage = new OrderbookV1.OrderbookStorage(redis, config.env.chainId);
   const orderbook = new OrderbookV1.Orderbook(orderbookStorage);
 
-  const matchExecutor = new MatchExecutor(config.env.chainId, network.matchExecutorAddress, network.initiator);
+  const nonceProvider = new NonceProvider(
+    config.env.chainId,
+    network.initiator.address,
+    network.exchangeAddress,
+    redlock,
+    network.httpProvider,
+    firestore
+  );
 
-  const executionEngine = new ExecutionEngine(
+  const matchExecutor = new MatchExecutor(
+    config.env.chainId,
+    network.matchExecutorAddress,
+    network.initiator,
+    nonceProvider
+  );
+
+  const executionEngine = new ExecutionEngine<unknown>(
+    config.env.chainId,
     orderbookStorage,
     redis,
     redlock,
     network.websocketProvider,
     network.httpProvider,
     matchExecutor,
-    2,
+    config.broadcasting.blockOffset,
     network.broadcaster,
     {
       debug: config.env.debug,
@@ -55,15 +69,7 @@ async function main() {
     enableMetrics: false
   });
 
-  // logger.info('process', 'Creating matches');
-  // const matches = await createMatch(config.env.chainId);
-
-  // if (matches) {
-  //   for (const match of matches) {
-  //     await orderRelay.add(match.infinityJob);
-  //     await orderRelay.add(match.seaportJob);
-  //   }
-  // }
+  const nonceProviderPromise = nonceProvider.run();
 
   logger.info('process', 'Starting matching engine');
   const matchingEnginePromise = matchingEngine.run();
@@ -74,7 +80,7 @@ async function main() {
   logger.info('process', 'Starting execution engine');
   const executionEnginePromise = executionEngine.run();
 
-  await Promise.all([matchingEnginePromise, orderRelayPromise, executionEnginePromise]);
+  await Promise.all([nonceProviderPromise, matchingEnginePromise, orderRelayPromise, executionEnginePromise]);
 }
 
 void main();

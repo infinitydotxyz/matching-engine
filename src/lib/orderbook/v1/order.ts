@@ -100,8 +100,8 @@ export class Order {
       nonce: constraints[5].toString(),
       maxTxGasPriceWei: constraints[6].toString(),
       maxTxGasPriceGwei: parseFloat(formatUnits(constraints[6].toString(), 'gwei')),
-      currency: signedOrder.execParams[0],
-      complication: signedOrder.execParams[1],
+      currency: signedOrder.execParams[1],
+      complication: signedOrder.execParams[0],
       extraParams: signedOrder.extraParams,
       isNative: signedOrder.signer !== constants.AddressZero,
       signedOrder
