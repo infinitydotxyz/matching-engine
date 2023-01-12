@@ -1,36 +1,68 @@
 {
-  "name": "typescript-template",
+  "name": "matching-engine",
   "version": "1.0.0",
+  "engines": {
+    "node": "16"
+  },
   "scripts": {
     "build": "npm run clean && tsc",
     "clean": "rimraf ./dist",
     "lint": "eslint . --ext .ts,.js",
     "format": "prettier -w ./src",
-    "start": "node -r dotenv/config ./dist/index.js",
-    "start:dev": "ts-node -r dotenv/config ./src/index.ts",
+    "start": "node -r dotenv/config -r module-alias/register ./dist/index.js",
+    "start:dev": "npx cross-env ENABLE_FORKING=1 ts-node -r dotenv/config ./src/index.ts",
+    "start:dev:non-fork": "ts-node -r dotenv/config ./src/index.ts",
+    "start:prod": "npm run build && npm run start",
+    "start:fork": "hardhat node --config ./hardhat.config.ts --network hardhat",
+    "setup:fork": "hardhat run ./src/configure-fork.ts --network localhost --config ./hardhat.config.ts",
     "update:lib": "npm install @infinityxyz/lib@latest",
-    "pre:push": "npm run format && npm run lint && npm run build"
+    "pre:push": "npm run format && npm run lint && npm run build",
+    "test": "jest",
+    "build:contracts": "rimraf artifacts && rimraf cache && hardhat compile --force",
+    "create-match": "npx cross-env ENABLE_FORKING=1 ts-node -r dotenv/config ./src/create-match.ts"
   },
   "dependencies": {
-    "dotenv": "^16.0.1"
+    "@flashbots/ethers-provider-bundle": "^0.6.1",
+    "@infinityxyz/lib": "^1.277.0",
+    "@reservoir0x/sdk": "^0.0.280",
+    "bullmq": "^3.4.1",
+    "dotenv": "^16.0.1",
+    "ethers": "^5.6.6",
+    "firebase-admin": "^11.4.0",
+    "ioredis": "^5.2.4",
+    "module-alias": "^2.2.2",
+    "nanoid": "^3.3.4",
+    "p-queue": "^6.6.2",
+    "redlock": "^5.0.0-beta.2",
+    "winston": "^3.8.2"
   },
   "devDependencies": {
-    "@types/node": "^17.0.35",
+    "@nomiclabs/hardhat-ethers": "^2.2.1",
+    "@openzeppelin/contracts": "^4.8.0",
+    "@trivago/prettier-plugin-sort-imports": "^4.0.0",
+    "@types/ioredis-mock": "^8.2.1",
+    "@types/jest": "^27.5.0",
+    "@types/node": "^18.11.14",
     "@typescript-eslint/eslint-plugin": "^5.25.0",
     "@typescript-eslint/parser": "^5.25.0",
     "eslint": "^8.15.0",
+    "eslint-config-google": "^0.14.0",
     "eslint-config-prettier": "^8.5.0",
     "eslint-plugin-eslint-comments": "^3.2.0",
+    "eslint-plugin-import": "^2.26.0",
+    "hardhat": "^2.12.5",
+    "ioredis-mock": "^8.2.2",
+    "jest": "^28.1.0",
     "prettier": "^2.6.2",
     "rimraf": "^3.0.2",
-    "ts-node": "^10.7.0",
-    "typescript": "^4.6.4"
+    "ts-jest": "^28.0.2",
+    "ts-node": "^10.9.1",
+    "tsconfig-paths": "^4.1.1",
+    "typescript": "^4.9.4"
   },
-  "prettier": {
-    "tabWidth": 2,
-    "printWidth": 120,
-    "singleQuote": true,
-    "trailingComma": "none",
-    "semi": true
+  "_moduleAliases": {
+    "@/config": "dist/config",
+    "@/common": "dist/common",
+    "@/lib": "dist/lib"
   }
 }

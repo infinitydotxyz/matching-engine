@@ -15,10 +15,19 @@
     "prettier"
   ],
   "env": {
-    "node": true
+    "node": true,
+    "jest": true
   },
-  "ignorePatterns": [".eslintrc", "dist/**/*"],
+  "ignorePatterns": [".eslintrc.js", "jest.config.ts", "**/*.spec", "dist", "hardhat.config.ts"],
   "rules": {
+    "@typescript-eslint/no-unsafe-return": "off",
+    "@typescript-eslint/no-unsafe-call": "off",
+    "@typescript-eslint/no-unsafe-assignment": "off",
+    "@typescript-eslint/no-unsafe-member-access": "off",
+    "@typescript-eslint/strict-boolean-expressions": "off",
+    "@typescript-eslint/restrict-template-expressions": "off",
+    "@typescript-eslint/no-misused-promises": "off",
+    "@typescript-eslint/interface-name-prefix": "off",
     "eslint-comments/disable-enable-pair": "off",
     "curly": 1
   }

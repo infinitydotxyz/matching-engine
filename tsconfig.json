@@ -2,6 +2,11 @@
   "compilerOptions": {
     "outDir": "./dist",
     "allowSyntheticDefaultImports": true,
+    "declaration": true,
+    "declarationMap": true,
+    "removeComments": true,
+    "skipLibCheck": true,
+    "sourceMap": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "incremental": true,
@@ -9,7 +14,18 @@
     "moduleResolution": "node",
     "resolveJsonModule": true,
     "strict": true,
-    "target": "es2020"
+    "target": "es2020",
+    "baseUrl": "src",
+    "paths": {
+      "@/config": ["config/index.ts"],
+      "@/config/*": ["config/*"],
+      "@/common/*": ["common/*"],
+      "@/lib/*": ["lib/*"]
+    }
   },
-  "include": ["src/"]
+  "include": ["src/**/*.ts"],
+  "exclude": ["hardhat.config.ts"],
+  "ts-node": {
+    "require": ["tsconfig-paths/register"]
+  }
 }
