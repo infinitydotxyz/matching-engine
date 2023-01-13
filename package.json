@@ -11,7 +11,7 @@
     "format": "prettier -w ./src",
     "start": "node -r dotenv/config -r module-alias/register ./dist/index.js",
     "start:dev": "npx cross-env ENABLE_FORKING=1 ts-node -r dotenv/config ./src/index.ts",
-    "start:dev:non-fork": "ts-node -r dotenv/config ./src/index.ts",
+    "start:dev:fb": "ts-node -r dotenv/config ./src/index.ts",
     "start:prod": "npm run build && npm run start",
     "start:fork": "hardhat node --config ./hardhat.config.ts --network hardhat",
     "setup:fork": "hardhat run ./src/configure-fork.ts --network localhost --config ./hardhat.config.ts",

@@ -2,6 +2,8 @@ import { Redis } from 'ioredis';
 
 import { ChainId } from '@infinityxyz/lib/types/core';
 
+import { logger } from '@/common/logger';
+
 import { AbstractOrderbookStorage } from '../orderbook-storage.abstract';
 import { Order } from './order';
 import { OrderData } from './types';
@@ -101,43 +103,61 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
   async save(_items: OrderData | OrderData[]): Promise<void> {
     const items = Array.isArray(_items) ? _items : [_items];
 
-    let txn = this._db.multi();
-
     for (const item of items) {
-      const order = new Order(Order.getOrderParams(item.id, this._chainId, item.order));
-      const orderItemSets = this._getOrderItemSets(order);
-      const fullOrder = JSON.stringify(item);
-      if (item.status === 'active') {
-        txn = txn.sadd(this.storedOrdersSetKey, item.id).zadd(this.activeOrdersOrderedSetKey, -1, item.id);
-        txn = txn.set(this.getFullOrderKey(item.id), fullOrder);
+      try {
+        let txn = this._db.multi();
 
-        for (const set of orderItemSets.sets) {
-          txn = txn.zadd(set, orderItemSets.orderScore, item.id);
-        }
-      } else {
-        txn = txn.srem(this.storedOrdersSetKey, item.id).zrem(this.activeOrdersOrderedSetKey, item.id);
-        txn = txn.del(this.getFullOrderKey(item.id));
+        const order = new Order(Order.getOrderParams(item.id, this._chainId, item.order));
+        const orderItemSets = this._getOrderItemSets(order);
+        const fullOrder = JSON.stringify(item);
+        if (item.status === 'active') {
+          logger.log('orderbook-storage', `Adding order ${item.id} to active orders`);
+          txn = txn.sadd(this.storedOrdersSetKey, item.id).zadd(this.activeOrdersOrderedSetKey, -1, item.id);
+          txn = txn.set(this.getFullOrderKey(item.id), fullOrder);
 
-        for (const set of orderItemSets.sets) {
-          txn = txn.zrem(set, item.id);
+          for (const set of orderItemSets.sets) {
+            txn = txn.zadd(set, orderItemSets.orderScore, item.id);
+          }
+        } else {
+          logger.log('orderbook-storage', `Removing order ${item.id} from active orders`);
+          txn.srem(this.storedOrdersSetKey, item.id).zrem(this.activeOrdersOrderedSetKey, item.id);
+          txn.del(this.getFullOrderKey(item.id));
+
+          for (const set of orderItemSets.sets) {
+            txn.zrem(set, item.id);
+          }
+          /**
+           * delete the set,
+           * for every order match in the set, delete the full match
+           */
+          const orderMatchesSet = this.getOrderMatchesSet(item.id);
+          const matches = await this._db.smembers(orderMatchesSet);
+
+          if (matches.length > 0) {
+            logger.log('orderbook-storage', `Removing matches: ${matches.join(', \n')} for order ${item.id}`);
+            txn.del(matches.map(this.getFullMatchKey.bind(this)));
+            txn.zrem(this.matchesByGasPriceOrderedSetKey, ...matches);
+            for (const match of matches) {
+              const matchOrderMatchesSet = this.getOrderMatchesSet(match);
+              txn.srem(matchOrderMatchesSet, item.id);
+            }
+          }
+          txn.del(orderMatchesSet);
+        }
+        const results = await txn.exec();
+        if (results) {
+          for (const [error] of results) {
+            if (error) {
+              logger.error('orderbook-storage', `Failed to save order ${item.id} - ${item.status} ${error}`);
+            }
+          }
         }
 
-        const orderMatchesSet = this.getOrderMatchesSet(item.id);
-        /**
-         * delete the set,
-         * for every order match in the set, delete the full match
-         */
-        const matches = await this._db.zrange(orderMatchesSet, 0, -1);
-        txn = txn.del(matches.map(this.getFullMatchKey.bind(this)));
-        txn = txn.zrem(this.matchesByGasPriceOrderedSetKey, ...matches);
-        for (const match of matches) {
-          const matchOrderMatchesSet = this.getOrderMatchesSet(match);
-          txn = txn.zrem(matchOrderMatchesSet, item.id);
-        }
-        txn = txn.del(orderMatchesSet);
+        logger.log('orderbook-storage', `Handled order ${item.id}`);
+      } catch (err) {
+        logger.error('orderbook-storage', `Failed to save order event ${item.id} - ${item.status} ${err}`);
       }
     }
-    await txn.exec();
   }
 
   protected _getOrderItemSets(order: Order) {

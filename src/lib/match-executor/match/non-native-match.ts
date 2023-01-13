@@ -1,8 +1,9 @@
-import { BigNumberish, ethers } from 'ethers';
+import { ethers } from 'ethers';
 import { formatUnits } from 'ethers/lib/utils';
 
 import { ChainId, ChainNFTs } from '@infinityxyz/lib/types/core';
 
+import { Block, BlockWithMaxFeePerGas } from '@/common/block';
 import { ValidityResult } from '@/lib/utils/validity-result';
 
 import { Seaport } from '../order';
@@ -53,14 +54,10 @@ export class NonNativeMatch extends OrderMatch {
   }
 
   async verifyMatchAtTarget(
-    targetBlock: {
-      timestamp: number;
-      blockNumber: number;
-      gasPrice: BigNumberish;
-    },
-    currentBlockTimestamp: number
+    targetBlock: BlockWithMaxFeePerGas,
+    currentBlock: Block
   ): Promise<ValidityResult<{ native: NativeMatchExecutionInfo; nonNative: NonNativeMatchExecutionInfo }>> {
-    const nativeResult = await this._nativeMatch.verifyMatchAtTarget(targetBlock, currentBlockTimestamp);
+    const nativeResult = await this._nativeMatch.verifyMatchAtTarget(targetBlock, currentBlock);
 
     if (!nativeResult.isValid) {
       return nativeResult;

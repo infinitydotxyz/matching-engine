@@ -72,8 +72,7 @@ export const getNetworkConfig = async (chainId: ChainId) => {
       exchangeAddress,
       websocketProvider,
       httpProvider,
-      broadcaster: new ForkedNetworkBroadcaster(chainId, chainIdInt, {
-        wallet: initiator,
+      broadcaster: new ForkedNetworkBroadcaster(chainId, chainIdInt, httpProvider, {
         provider: httpProvider
       }),
       test: {
@@ -89,7 +88,7 @@ export const getNetworkConfig = async (chainId: ChainId) => {
     const matchExecutorAddress = getEnvVariable('MATCH_EXECUTOR_ADDRESS', true);
     const authSigner = new ethers.Wallet(getEnvVariable('FLASHBOTS_AUTH_SIGNER_KEY', true));
     const relayUrl = chainId === ChainId.Mainnet ? DEFAULT_FLASHBOTS_RELAY : 'https://relay-goerli.flashbots.net/';
-    const flashbotsProvider = await FlashbotsBundleProvider.create(httpProvider, authSigner, relayUrl);
+    const flashbotsProvider = await FlashbotsBundleProvider.create(httpProvider, authSigner, relayUrl, chainIdInt);
     return {
       chainId,
       isForkingEnabled: false,
@@ -99,9 +98,8 @@ export const getNetworkConfig = async (chainId: ChainId) => {
       exchangeAddress: exchangeAddress,
       httpProvider,
       websocketProvider,
-      broadcaster: new FlashbotsBroadcaster(chainId, chainIdInt, {
+      broadcaster: new FlashbotsBroadcaster(chainId, chainIdInt, httpProvider, {
         authSigner,
-        provider: httpProvider,
         flashbotsProvider: flashbotsProvider,
         allowReverts: false
       })

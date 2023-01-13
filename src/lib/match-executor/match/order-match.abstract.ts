@@ -1,5 +1,4 @@
-import { BigNumberish } from 'ethers';
-
+import { Block, BlockWithMaxFeePerGas } from '@/common/block';
 import { ValidityResult } from '@/lib/utils/validity-result';
 
 import { Match, NativeMatchExecutionInfo, NonNativeMatchExecutionInfo } from './types';
@@ -28,12 +27,8 @@ export abstract class OrderMatch {
   constructor(protected _match: Match) {}
 
   abstract verifyMatchAtTarget(
-    targetBlock: {
-      timestamp: number;
-      blockNumber: number;
-      gasPrice: BigNumberish;
-    },
-    currentBlockTimestamp: number
+    targetBlock: BlockWithMaxFeePerGas,
+    currentBlock: Block
   ): Promise<
     ValidityResult<
       | { native: NativeMatchExecutionInfo; nonNative: NonNativeMatchExecutionInfo }

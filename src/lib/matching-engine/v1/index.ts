@@ -56,39 +56,45 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
     logger.log('matching-engine', `found ${validMatches.length} valid matches for order ${order.id}`);
     if (validMatches.length > 0) {
       type DbMatch = {
-        otherOrderIds: Set<string>;
-        matchIds: Set<string>;
+        otherOrderIds: string[];
+        matchIds: string[];
       };
 
       const dbMatches = validMatches.reduce((acc, match) => {
-        if (match.listing.id in acc) {
-          acc[match.listing.id].matchIds.add(match.offer.id);
-          acc[match.listing.id].otherOrderIds.add(match.offer.id);
-        } else {
-          acc[match.listing.id] = {
-            otherOrderIds: new Set(match.offer.id),
-            matchIds: new Set(match.matchId)
+        let listingItem = acc.get(match.listing.id);
+        let offerItem = acc.get(match.offer.id);
+
+        if (!listingItem) {
+          listingItem = {
+            otherOrderIds: [match.offer.id],
+            matchIds: [match.matchId]
           };
+          acc.set(match.listing.id, listingItem);
+        } else {
+          listingItem.otherOrderIds.push(match.offer.id);
+          listingItem.matchIds.push(match.matchId);
         }
 
-        if (match.offer.id in acc) {
-          acc[match.offer.id].matchIds.add(match.listing.id);
-          acc[match.offer.id].otherOrderIds.add(match.listing.id);
-        } else {
-          acc[match.offer.id] = {
-            otherOrderIds: new Set(match.listing.id),
-            matchIds: new Set(match.matchId)
+        if (!offerItem) {
+          offerItem = {
+            otherOrderIds: [match.listing.id],
+            matchIds: [match.matchId]
           };
+          acc.set(match.offer.id, offerItem);
+        } else {
+          offerItem.otherOrderIds.push(match.listing.id);
+          offerItem.matchIds.push(match.matchId);
         }
 
         return acc;
-      }, {} as { [orderId: string]: DbMatch });
+      }, new Map() as Map<string, DbMatch>);
 
       const pipeline = this._db.pipeline();
 
-      for (const [orderId, { matchIds }] of Object.entries(dbMatches)) {
+      for (const [orderId, { matchIds }] of dbMatches.entries()) {
         const orderMatchesSet = this._storage.getOrderMatchesSet(orderId);
-        pipeline.sadd(orderMatchesSet, ...matchIds);
+        const matchIdsArray = [...new Set(matchIds)];
+        pipeline.sadd(orderMatchesSet, matchIdsArray);
       }
 
       for (const match of validMatches) {
