@@ -87,7 +87,7 @@ export abstract class Order extends SourceOrder<ChainOBOrder> {
     if (complication === constants.AddressZero || this.complication !== complication) {
       throw new OrderError(
         'invalid complication',
-        ErrorCode.InfinityComplication,
+        ErrorCode.InfinityComplication, // todo: joe change this to FlowComplication
         this._params.execParams[0],
         'infinity',
         'unsupported'
