@@ -1,11 +1,12 @@
 import { BulkJobOptions, Job } from 'bullmq';
 import { BigNumber, BigNumberish, ethers } from 'ethers';
-import { formatUnits, parseUnits } from 'ethers/lib/utils';
+import { formatEther, formatUnits, parseUnits } from 'ethers/lib/utils';
 import Redis from 'ioredis';
 import PQueue from 'p-queue';
 import Redlock, { ExecutionError, RedlockAbortSignal } from 'redlock';
 
 import { FlashbotsBundleProvider } from '@flashbots/ethers-provider-bundle';
+import { getCallTrace, parseCallTrace } from '@georgeroman/evm-tx-simulator';
 import { ERC20ABI, ERC721ABI } from '@infinityxyz/lib/abi';
 import { ChainId } from '@infinityxyz/lib/types/core';
 import { ONE_MIN } from '@infinityxyz/lib/utils';
@@ -113,7 +114,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         return;
       }
 
-      const priorityFeeWei = parseUnits('5', 'gwei');
+      const priorityFeeWei = parseUnits('0.01', 'gwei'); // TODO
       const targetBaseFeeWei = target.baseFeePerGas;
       const targetMaxFeePerGasWei = BigNumber.from(targetBaseFeeWei).add(priorityFeeWei);
       const targetMaxFeePerGasGwei = parseFloat(formatUnits(targetMaxFeePerGasWei, 'gwei'));
@@ -177,6 +178,9 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         return;
       }
 
+      logger.log('execution-engine', `Block ${target.number}. Simulating balance changes`);
+      await this.simulateBalanceChanges(txnData);
+
       logger.log('execution-engine', `Block ${target.number}. Txn generated.`);
 
       const { receipt } = await this._broadcaster.broadcast(txnData, {
@@ -201,6 +205,51 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       }
     } catch (err) {
       logger.error('execution-engine', `failed to process job for block ${target.number} ${err}`);
+    }
+  }
+
+  protected async simulateBalanceChanges(txData: {
+    from: string;
+    to: string;
+    maxFeePerGas: string;
+    maxPriorityFeePerGas: string;
+    gasLimit: string;
+    data: string;
+  }) {
+    if (!config.env.isForkingEnabled) {
+      const matchExecutor = this._matchExecutor.address;
+      const weth = Common.Addresses.Weth[parseInt(this._chainId, 10)];
+
+      const trace = await getCallTrace(
+        {
+          from: txData.from,
+          to: txData.to,
+          data: txData.data,
+          value: '0',
+          gas: txData.gasLimit,
+          gasPrice: txData.maxFeePerGas
+        },
+        this._rpcProvider
+      );
+
+      const finalState = parseCallTrace(trace);
+
+      const ethBalanceDiff = BigNumber.from(
+        finalState[matchExecutor].tokenBalanceState['native:0x0000000000000000000000000000000000000000'] ?? '0'
+      );
+      const wethBalanceDiff = BigNumber.from(finalState[matchExecutor].tokenBalanceState[`erc20:${weth}`] ?? '0');
+      const totalBalanceDiff = ethBalanceDiff.add(wethBalanceDiff);
+
+      if (totalBalanceDiff.gte(0)) {
+        logger.log('execution-engine', `Match executor received ${formatEther(totalBalanceDiff.toString())} ETH/WETH`);
+        return;
+      }
+
+      logger.warn(
+        'execution-engine',
+        `Match executor lost ${formatEther(totalBalanceDiff.mul(-1).toString())} ETH/WETH. Tx ${JSON.stringify(txData)}`
+      );
+      throw new Error('Match executor lost ETH/WETH');
     }
   }
 

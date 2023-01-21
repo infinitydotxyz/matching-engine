@@ -39,8 +39,6 @@ export class FlashbotsBroadcaster extends Broadcaster<Options> {
       nonce: fullTxn.nonce
     };
 
-    console.log(JSON.stringify(fbTxn, null, 2));
-
     const bundleTxn: FlashbotsBundleTransaction = {
       transaction: fbTxn,
       signer: options.signer
