@@ -31,7 +31,7 @@ export abstract class Broadcaster<T> {
   constructor(
     protected _chainId: ChainId,
     protected underlyingChainId: number,
-    protected _provider: ethers.providers.JsonRpcProvider,
+    protected _provider: ethers.providers.StaticJsonRpcProvider,
     protected _options: T
   ) {}
 

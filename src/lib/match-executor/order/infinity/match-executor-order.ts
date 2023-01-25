@@ -24,7 +24,7 @@ export class MatchExecutorOrder extends Order {
   constructor(
     params: OrderData,
     _chainId: ChainId,
-    _provider: ethers.providers.JsonRpcProvider,
+    _provider: ethers.providers.StaticJsonRpcProvider,
     protected _nonceProvider: NonceProvider,
     protected _matchExecutorAddress: string,
     protected _matchExecutorOwner: ethers.Wallet,

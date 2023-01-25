@@ -12,7 +12,7 @@ import { Order } from './order.abstract';
 export class OrderFactory {
   constructor(
     protected _chainId: ChainId,
-    protected _provider: ethers.providers.JsonRpcProvider,
+    protected _provider: ethers.providers.StaticJsonRpcProvider,
     protected _nonceProvider: NonceProvider,
     protected _matchExecutorAddress: string,
     protected _matchExecutorOwner: ethers.Wallet,

@@ -48,7 +48,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     _db: Redis,
     protected _redlock: Redlock,
     protected _websocketProvider: ethers.providers.WebSocketProvider,
-    protected _rpcProvider: ethers.providers.JsonRpcProvider,
+    protected _rpcProvider: ethers.providers.StaticJsonRpcProvider,
     protected _matchExecutor: MatchExecutor,
     protected _blockOffset: number,
     protected _broadcaster: Broadcaster<T>,

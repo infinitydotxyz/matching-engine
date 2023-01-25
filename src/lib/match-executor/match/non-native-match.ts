@@ -21,7 +21,7 @@ export class NonNativeMatch extends OrderMatch {
     match: Match,
     protected _chainId: ChainId,
     orderFactory: Infinity.OrderFactory,
-    protected provider: ethers.providers.JsonRpcProvider,
+    protected provider: ethers.providers.StaticJsonRpcProvider,
     protected _matchExecutorAddress: string
   ) {
     super(match);

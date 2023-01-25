@@ -50,7 +50,7 @@ export const getNetworkConfig = async (chainId: ChainId) => {
   const exchangeAddress = getExchangeAddress(chainId);
 
   if (isForkingEnabled) {
-    const httpProvider = new ethers.providers.JsonRpcProvider(httpUrl, chainIdInt);
+    const httpProvider = new ethers.providers.StaticJsonRpcProvider(httpUrl, chainIdInt);
     const websocketProvider = new ethers.providers.WebSocketProvider(websocketUrl, chainIdInt);
     const initiator = new ethers.Wallet(getEnvVariable('INITIATOR_KEY', true).trim().toLowerCase()).connect(
       httpProvider
@@ -84,7 +84,7 @@ export const getNetworkConfig = async (chainId: ChainId) => {
       }
     };
   } else {
-    const httpProvider = new ethers.providers.JsonRpcProvider(httpUrl, chainIdInt);
+    const httpProvider = new ethers.providers.StaticJsonRpcProvider(httpUrl, chainIdInt);
     const websocketProvider = new ethers.providers.WebSocketProvider(websocketUrl, chainIdInt);
     const initiator = new ethers.Wallet(getEnvVariable('INITIATOR_KEY', true).trim().toLowerCase()).connect(
       httpProvider

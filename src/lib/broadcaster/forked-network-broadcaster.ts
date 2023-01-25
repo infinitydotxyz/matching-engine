@@ -5,7 +5,7 @@ import { logger } from '@/common/logger';
 import { BroadcastOptions, Broadcaster, Eip1559Txn } from './broadcaster.abstract';
 
 export type Options = {
-  provider: ethers.providers.JsonRpcProvider;
+  provider: ethers.providers.StaticJsonRpcProvider;
 };
 
 export class ForkedNetworkBroadcaster extends Broadcaster<Options> {

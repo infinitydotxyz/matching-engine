@@ -22,7 +22,7 @@ export abstract class SeaportOrder extends NonNativeOrder<Seaport.Types.OrderCom
     return this._orderData.gasUsage;
   }
 
-  constructor(_orderData: OrderData, _chainId: ChainId, provider: ethers.providers.JsonRpcProvider) {
+  constructor(_orderData: OrderData, _chainId: ChainId, provider: ethers.providers.StaticJsonRpcProvider) {
     super(_orderData, _chainId, provider);
     this._order = new Seaport.Order(this.chainId, this._sourceParams);
   }
