@@ -31,7 +31,7 @@ export class NonceProvider {
     protected _accountAddress: string,
     protected _exchangeAddress: string,
     protected _redlock: Redlock,
-    protected _provider: ethers.providers.JsonRpcProvider,
+    protected _provider: ethers.providers.StaticJsonRpcProvider,
     _firestore: FirebaseFirestore.Firestore,
     options: { saveDelay: number } = { saveDelay: 100 }
   ) {

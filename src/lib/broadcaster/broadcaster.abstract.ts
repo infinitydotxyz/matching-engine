@@ -2,6 +2,8 @@ import { BigNumberish, ethers } from 'ethers';
 
 import { ChainId } from '@infinityxyz/lib/types/core';
 
+import { Block, BlockWithGas } from '@/common/block';
+
 export interface Eip1559Txn {
   from: string;
   to: string;
@@ -11,17 +13,14 @@ export interface Eip1559Txn {
   gasLimit: BigNumberish;
   data: string;
   chainId: number;
+  nonce: BigNumberish;
+  value: string;
 }
 
 export type BroadcastOptions = {
-  targetBlock: {
-    blockNumber: number;
-    timestamp: number;
-  };
-  currentBlock: {
-    timestamp: number;
-    blockNumber: number;
-  };
+  targetBlock: BlockWithGas;
+  currentBlock: Block;
+  signer: ethers.Signer;
 };
 
 export abstract class Broadcaster<T> {
@@ -29,16 +28,29 @@ export abstract class Broadcaster<T> {
     return parseInt(this._chainId, 10);
   }
 
-  constructor(protected _chainId: ChainId, protected underlyingChainId: number, protected _options: T) {}
+  constructor(
+    protected _chainId: ChainId,
+    protected underlyingChainId: number,
+    protected _provider: ethers.providers.StaticJsonRpcProvider,
+    protected _options: T
+  ) {}
 
   abstract broadcast(
-    txn: Omit<Eip1559Txn, 'type' | 'chainId'>,
+    txn: Omit<Eip1559Txn, 'type' | 'chainId' | 'nonce' | 'value'>,
     options: BroadcastOptions
   ): Promise<{ receipt: ethers.providers.TransactionReceipt }>;
 
-  protected _getFullTxn(txn: Omit<Eip1559Txn, 'type' | 'chainId'>): Eip1559Txn {
+  protected async _getNonce(account: string) {
+    const nonce = await this._provider.getTransactionCount(account);
+    return nonce;
+  }
+
+  protected async _getFullTxn(txn: Omit<Eip1559Txn, 'type' | 'chainId' | 'value' | 'nonce'>): Promise<Eip1559Txn> {
+    const nonce = await this._getNonce(txn.from);
     return {
       ...txn,
+      value: '0',
+      nonce,
       chainId: this.underlyingChainId,
       type: 2
     };

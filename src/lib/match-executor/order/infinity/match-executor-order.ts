@@ -24,7 +24,7 @@ export class MatchExecutorOrder extends Order {
   constructor(
     params: OrderData,
     _chainId: ChainId,
-    _provider: ethers.providers.JsonRpcProvider,
+    _provider: ethers.providers.StaticJsonRpcProvider,
     protected _nonceProvider: NonceProvider,
     protected _matchExecutorAddress: string,
     protected _matchExecutorOwner: ethers.Wallet,
@@ -34,7 +34,11 @@ export class MatchExecutorOrder extends Order {
     if (!Order.isMatchExecutorOrder(this._orderData)) {
       throw new Error('Order is not a match executor order');
     }
-    this._contract = new ethers.Contract(this._matchExecutorAddress, MatchExecutorAbi);
+    this._contract = new ethers.Contract(
+      this._matchExecutorAddress,
+      MatchExecutorAbi,
+      this._matchExecutorOwner.provider
+    );
     this._contract.connect(this._matchExecutorOwner);
   }
 

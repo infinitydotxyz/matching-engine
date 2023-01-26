@@ -1,9 +1,10 @@
-import { BigNumber, BigNumberish } from 'ethers';
+import { BigNumber } from 'ethers';
 
 import { ChainId, ChainOBOrder } from '@infinityxyz/lib/types/core';
 import { getExchangeAddress, orderHash } from '@infinityxyz/lib/utils';
 import { Common } from '@reservoir0x/sdk';
 
+import { Block, BlockWithMaxFeePerGas } from '@/common/block';
 import { ValidityResult } from '@/lib/utils/validity-result';
 
 import * as Infinity from '../order/infinity';
@@ -42,12 +43,8 @@ export class NativeMatch extends OrderMatch {
   }
 
   async verifyMatchAtTarget(
-    targetBlock: {
-      timestamp: number;
-      blockNumber: number;
-      gasPrice: BigNumberish;
-    },
-    currentBlockTimestamp: number
+    targetBlock: BlockWithMaxFeePerGas,
+    currentBlock: Block
   ): Promise<ValidityResult<{ native: NativeMatchExecutionInfo }>> {
     if (this._listing.isMatchExecutorOrder && this._offer.isMatchExecutorOrder) {
       return {
@@ -56,8 +53,8 @@ export class NativeMatch extends OrderMatch {
       };
     }
 
-    const offer = await this._offer.getChainOrder(this._listing.params, currentBlockTimestamp);
-    const listing = await this._listing.getChainOrder(this._offer.params, currentBlockTimestamp);
+    const offer = await this._offer.getChainOrder(this._listing.params, currentBlock.timestamp);
+    const listing = await this._listing.getChainOrder(this._offer.params, currentBlock.timestamp);
 
     if (offer.signer === listing.signer) {
       return {
@@ -145,7 +142,7 @@ export class NativeMatch extends OrderMatch {
         isValid: false,
         reason: 'Listing end time is in the past'
       };
-    } else if (BigNumber.from(offer.constraints[6]).lt(targetBlock.gasPrice)) {
+    } else if (BigNumber.from(offer.constraints[6]).lt(targetBlock.maxFeePerGas)) {
       return {
         isValid: false,
         reason: 'Offer gas price is too low'

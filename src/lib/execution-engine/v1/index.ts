@@ -1,15 +1,18 @@
 import { BulkJobOptions, Job } from 'bullmq';
 import { BigNumber, BigNumberish, ethers } from 'ethers';
-import { parseUnits } from 'ethers/lib/utils';
+import { formatEther, formatUnits, parseUnits } from 'ethers/lib/utils';
 import Redis from 'ioredis';
 import PQueue from 'p-queue';
 import Redlock, { ExecutionError, RedlockAbortSignal } from 'redlock';
 
+import { FlashbotsBundleProvider } from '@flashbots/ethers-provider-bundle';
+import { getCallTrace, parseCallTrace } from '@georgeroman/evm-tx-simulator';
 import { ERC20ABI, ERC721ABI } from '@infinityxyz/lib/abi';
 import { ChainId } from '@infinityxyz/lib/types/core';
 import { ONE_MIN } from '@infinityxyz/lib/utils';
 import { Common } from '@reservoir0x/sdk';
 
+import { Block, BlockWithGas, BlockWithMaxFeePerGas } from '@/common/block';
 import { logger } from '@/common/logger';
 import { config } from '@/config';
 import { Broadcaster } from '@/lib/broadcaster/broadcaster.abstract';
@@ -28,12 +31,8 @@ import { Invalid, ValidityResult } from '@/lib/utils/validity-result';
 
 export type ExecutionEngineJob = {
   id: string;
-  currentBlockNumber: number;
-  currentBlockTimestamp: number;
-  currentGasPriceWei: string;
-  currentGasPriceGwei: number;
-  targetBlockNumber: number;
-  targetBlockTimestamp: number;
+  currentBlock: Block;
+  targetBlock: Block;
 };
 
 export type ExecutionEngineResult = unknown;
@@ -41,13 +40,15 @@ export type ExecutionEngineResult = unknown;
 export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, ExecutionEngineResult> {
   protected _version: string;
 
+  protected _startTimestampSeconds: number;
+
   constructor(
     protected _chainId: ChainId,
     protected _storage: OrderbookStorage,
     _db: Redis,
     protected _redlock: Redlock,
     protected _websocketProvider: ethers.providers.WebSocketProvider,
-    protected _rpcProvider: ethers.providers.JsonRpcProvider,
+    protected _rpcProvider: ethers.providers.StaticJsonRpcProvider,
     protected _matchExecutor: MatchExecutor,
     protected _blockOffset: number,
     protected _broadcaster: Broadcaster<T>,
@@ -56,6 +57,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     const version = 'v1';
     super(_db, `execution-engine:${version}`, { ...options, attempts: 1 });
     this._version = version;
+    this._startTimestampSeconds = Math.floor(Date.now() / 1000);
   }
 
   async add(job: ExecutionEngineJob | ExecutionEngineJob[]): Promise<void> {
@@ -101,24 +103,38 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
   }
 
   async processJob(job: Job<ExecutionEngineJob, unknown, string>): Promise<unknown> {
+    const target = job.data.targetBlock;
+    const current = job.data.currentBlock;
     try {
-      const targetBaseFeeGwei = Math.ceil(job.data.currentGasPriceGwei) + 2;
-      const targetPriorityFeeGwei = 3;
-      const targetGasPriceGwei = targetBaseFeeGwei + targetPriorityFeeGwei;
+      if (target.timestamp < this._startTimestampSeconds) {
+        logger.warn(
+          'block-listener',
+          `Received block ${job.data.targetBlock.number} with timestamp ${job.data.targetBlock.timestamp} which is older than the start time ${this._startTimestampSeconds}. Skipping...`
+        );
+        return;
+      }
 
-      const targetBlock = {
-        timestamp: job.data.targetBlockTimestamp,
-        blockNumber: job.data.targetBlockNumber,
-        gasPrice: targetGasPriceGwei
+      const priorityFeeWei = parseUnits('0.01', 'gwei'); // TODO
+      const targetBaseFeeWei = target.baseFeePerGas;
+      const targetMaxFeePerGasWei = BigNumber.from(targetBaseFeeWei).add(priorityFeeWei);
+      const targetMaxFeePerGasGwei = parseFloat(formatUnits(targetMaxFeePerGasWei, 'gwei'));
+
+      const targetWithGas: BlockWithGas = {
+        ...target,
+        maxPriorityFeePerGas: priorityFeeWei.toString(),
+        maxFeePerGas: targetMaxFeePerGasWei.toString()
       };
 
       logger.log(
         'execution-engine',
-        `Generating txn for target: ${job.data.targetBlockNumber}. Current Gas Price: ${job.data.currentGasPriceGwei} gwei. Target gas price: ${targetGasPriceGwei} gwei`
+        `Generating txn for target: ${target.number}. Current base fee: ${formatUnits(
+          current.baseFeePerGas,
+          'gwei'
+        )}. Target max fee per gas: ${targetMaxFeePerGasGwei} gwei`
       );
 
       const [matches, pendingOrders] = await Promise.all([
-        this._loadMatches(targetGasPriceGwei),
+        this._loadMatches(targetMaxFeePerGasGwei),
         this._loadPendingOrderIds()
       ]);
       const nonPendingMatches = this._filterPendingOrders(matches, pendingOrders);
@@ -140,48 +156,37 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
 
       logger.log(
         'execution-engine',
-        `Block ${job.data.targetBlockNumber}. Found ${sortedMatches.length} order matches before simulation.`
+        `Block ${target.number}. Found ${sortedMatches.length} order matches before simulation.`
       );
 
-      const nonConflictingMatches = await this.simulate(sortedMatches, targetBlock, {
-        timestamp: job.data.currentBlockTimestamp,
-        blockNumber: job.data.currentBlockNumber,
-        gasPrice: job.data.currentGasPriceGwei
-      });
+      const nonConflictingMatches = await this.simulate(sortedMatches, targetWithGas, current);
 
       logger.log(
         'execution-engine',
-        `Block ${job.data.targetBlockNumber}. Target gas price: ${targetGasPriceGwei} gwei. Found ${nonConflictingMatches.length} order matches after simulation.`
+        `Block ${target.number}. Found ${nonConflictingMatches.length} order matches after simulation.`
       );
 
       logger.log(
         'execution-engine',
-        `Block ${job.data.targetBlockNumber}. Valid matches: ${nonConflictingMatches.map((item) => item.id)}`
+        `Block ${target.number}. Valid matches: ${nonConflictingMatches.map((item) => item.id)}`
       );
 
-      const txnData = await this._generateTxn(
-        nonConflictingMatches,
-        targetBaseFeeGwei,
-        targetPriorityFeeGwei,
-        job.data.currentBlockTimestamp
-      );
+      const txnData = await this._generateTxn(nonConflictingMatches, targetWithGas, current);
 
       if (!txnData) {
-        logger.log('execution-engine', `Block ${job.data.targetBlockNumber}. No matches found`);
+        logger.log('execution-engine', `Block ${target.number}. No matches found`);
         return;
       }
 
-      logger.log('execution-engine', `Block ${job.data.targetBlockNumber}. Txn generated.`);
+      logger.log('execution-engine', `Block ${target.number}. Simulating balance changes`);
+      await this.simulateBalanceChanges(txnData);
+
+      logger.log('execution-engine', `Block ${target.number}. Txn generated.`);
 
       const { receipt } = await this._broadcaster.broadcast(txnData, {
-        targetBlock: {
-          blockNumber: job.data.targetBlockNumber,
-          timestamp: job.data.targetBlockTimestamp
-        },
-        currentBlock: {
-          blockNumber: job.data.currentBlockNumber,
-          timestamp: job.data.currentBlockTimestamp
-        }
+        targetBlock: targetWithGas,
+        currentBlock: current,
+        signer: this._matchExecutor.owner
       });
 
       if (receipt.status === 1) {
@@ -189,39 +194,69 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         await this._savePendingMatches(nonConflictingMatches.map((item) => item.match));
         logger.log(
           'execution-engine',
-          `Block ${job.data.targetBlockNumber}. Txn ${receipt.transactionHash} executed successfully. Gas used: ${gasUsage}`
+          `Block ${target.number}. Txn ${receipt.transactionHash} executed successfully. Gas used: ${gasUsage}`
         );
       } else {
+        logger.log('execution-engine', `Block ${target.number}. Txn ${receipt.transactionHash} execution failed`);
         logger.log(
           'execution-engine',
-          `Block ${job.data.targetBlockNumber}. Txn ${receipt.transactionHash} execution failed`
-        );
-        logger.log(
-          'execution-engine',
-          `Block ${job.data.targetBlockNumber}. Txn ${receipt.transactionHash} receipt: ${JSON.stringify(
-            receipt,
-            null,
-            2
-          )}`
+          `Block ${target.number}. Txn ${receipt.transactionHash} receipt: ${JSON.stringify(receipt, null, 2)}`
         );
       }
     } catch (err) {
-      logger.error('execution-engine', `failed to process job for block ${job.data.targetBlockNumber} ${err}`);
+      logger.error('execution-engine', `failed to process job for block ${target.number} ${err}`);
+    }
+  }
+
+  protected async simulateBalanceChanges(txData: {
+    from: string;
+    to: string;
+    maxFeePerGas: string;
+    maxPriorityFeePerGas: string;
+    gasLimit: string;
+    data: string;
+  }) {
+    if (!config.env.isForkingEnabled) {
+      const matchExecutor = this._matchExecutor.address;
+      const weth = Common.Addresses.Weth[parseInt(this._chainId, 10)];
+
+      const trace = await getCallTrace(
+        {
+          from: txData.from,
+          to: txData.to,
+          data: txData.data,
+          value: '0',
+          gas: txData.gasLimit,
+          gasPrice: txData.maxFeePerGas
+        },
+        this._rpcProvider
+      );
+
+      const finalState = parseCallTrace(trace);
+
+      const ethBalanceDiff = BigNumber.from(
+        finalState[matchExecutor].tokenBalanceState['native:0x0000000000000000000000000000000000000000'] ?? '0'
+      );
+      const wethBalanceDiff = BigNumber.from(finalState[matchExecutor].tokenBalanceState[`erc20:${weth}`] ?? '0');
+      const totalBalanceDiff = ethBalanceDiff.add(wethBalanceDiff);
+
+      if (totalBalanceDiff.gte(0)) {
+        logger.log('execution-engine', `Match executor received ${formatEther(totalBalanceDiff.toString())} ETH/WETH`);
+        return;
+      }
+
+      logger.warn(
+        'execution-engine',
+        `Match executor lost ${formatEther(totalBalanceDiff.mul(-1).toString())} ETH/WETH. Tx ${JSON.stringify(txData)}`
+      );
+      throw new Error('Match executor lost ETH/WETH');
     }
   }
 
   protected async simulate(
     matches: (NativeMatch | NonNativeMatch)[],
-    targetBlock: {
-      timestamp: number;
-      blockNumber: number;
-      gasPrice: ethers.BigNumberish;
-    },
-    currentBlock: {
-      timestamp: number;
-      blockNumber: number;
-      gasPrice: ethers.BigNumberish;
-    }
+    targetBlock: BlockWithMaxFeePerGas,
+    currentBlock: Block
   ) {
     const results: {
       match: NativeMatch | NonNativeMatch;
@@ -231,9 +266,10 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     }[] = await Promise.all(
       matches.map(async (match) => {
         try {
-          const res = await match.verifyMatchAtTarget(targetBlock, currentBlock.timestamp);
+          const res = await match.verifyMatchAtTarget(targetBlock, currentBlock);
           return { match, verificationResult: res };
         } catch (err) {
+          logger.warn('execution-engine', `Failed to verify match ${match.id} ${err}`);
           return {
             match,
             verificationResult: { isValid: false, reason: err instanceof Error ? err.message : `${err}` } as Invalid
@@ -255,10 +291,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       }
     }
 
-    const initialState = await this._loadInitialState(
-      [...nonNativeTransfers, ...nativeTransfers],
-      currentBlock.blockNumber
-    );
+    const initialState = await this._loadInitialState([...nonNativeTransfers, ...nativeTransfers], currentBlock.number);
 
     return this._simulate(initialState, results).map((item) => item.match);
   }
@@ -426,22 +459,17 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
 
   protected async _generateTxn(
     matches: (NativeMatch | NonNativeMatch)[],
-    baseFeeGwei: number,
-    priorityFeeGwei: number,
-    currentBlockTimestamp: number
+    targetBlock: BlockWithGas,
+    currentBlock: Block
   ) {
     if (matches.length === 0) {
       return null;
     }
 
-    const baseFeeWei = parseUnits(baseFeeGwei.toString(), 'gwei');
-    const priorityFeeWei = parseUnits(priorityFeeGwei.toString(), 'gwei');
-    const maxFeePerGas = baseFeeWei.add(priorityFeeWei);
-
     const nonNativeMatches = matches.filter((item) => !item.isNative) as NonNativeMatch[];
 
     const matchOrders: MatchOrders[] = await Promise.all(
-      matches.map((item) => item.getMatchOrders(currentBlockTimestamp))
+      matches.map((item) => item.getMatchOrders(currentBlock.timestamp))
     );
 
     if (nonNativeMatches.length > 0) {
@@ -457,11 +485,11 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         externalFulfillments,
         matches: matchOrders
       };
-      const txn = this._matchExecutor.getBrokerTxn(batch, maxFeePerGas, priorityFeeWei, 30_000_000);
+      const txn = this._matchExecutor.getBrokerTxn(batch, targetBlock, 30_000_000);
 
       return txn;
     } else {
-      const txn = this._matchExecutor.getNativeTxn(matchOrders, maxFeePerGas, priorityFeeWei, 30_000_000);
+      const txn = this._matchExecutor.getNativeTxn(matchOrders, targetBlock, 30_000_000);
 
       return txn;
     }
@@ -551,7 +579,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     };
 
     const handler = async (blockNumber: number) => {
-      logger.log('Block listener', `Received block ${blockNumber}`);
+      logger.log('block-listener', `Received block ${blockNumber} at ${new Date().toISOString()}`);
 
       try {
         this._checkSignal(signal);
@@ -567,16 +595,26 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
 
       try {
         const block = await this._rpcProvider.getBlock(blockNumber);
-        const currentGasPrice = await this._rpcProvider.getGasPrice();
-        const currentGasPriceGwei = parseFloat(ethers.utils.formatUnits(currentGasPrice, 'gwei'));
+        const baseFeePerGas = block.baseFeePerGas;
+        if (baseFeePerGas == null) {
+          throw new Error(`Block ${blockNumber} does not have baseFeePerGas`);
+        }
+
         const job: ExecutionEngineJob = {
           id: `${config.env.chainId}:${blockNumber}`,
-          currentBlockNumber: blockNumber,
-          currentGasPriceWei: currentGasPrice.toString(),
-          currentGasPriceGwei,
-          currentBlockTimestamp: block.timestamp,
-          targetBlockNumber: blockNumber + this._blockOffset,
-          targetBlockTimestamp: block.timestamp + this._blockOffset * 15 // TODO this should be configured based on the chain
+          currentBlock: {
+            number: blockNumber,
+            timestamp: block.timestamp,
+            baseFeePerGas: baseFeePerGas.toString()
+          },
+          targetBlock: {
+            number: blockNumber + this._blockOffset,
+            timestamp: block.timestamp + this._blockOffset * 13, // TODO this should be configured based on the chain
+            baseFeePerGas: FlashbotsBundleProvider.getMaxBaseFeeInFutureBlock(
+              baseFeePerGas,
+              this._blockOffset
+            ).toString()
+          }
         };
 
         await this.add(job);

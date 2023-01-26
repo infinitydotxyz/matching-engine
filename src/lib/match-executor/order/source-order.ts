@@ -23,7 +23,7 @@ export abstract class SourceOrder<RawOrder = never> {
   constructor(
     protected _orderData: OrderData,
     protected _chainId: ChainId,
-    protected _provider: ethers.providers.JsonRpcProvider
+    protected _provider: ethers.providers.StaticJsonRpcProvider
   ) {
     this._sourceParams = this._orderData.sourceOrder as RawOrder;
     this._params = this._orderData.order;

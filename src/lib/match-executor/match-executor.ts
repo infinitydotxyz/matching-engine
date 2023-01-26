@@ -3,6 +3,7 @@ import { BigNumberish, ethers } from 'ethers';
 import { ChainId } from '@infinityxyz/lib/types/core';
 
 import MatchExecutorAbi from '@/common/abi/match-executor.json';
+import { BlockWithGas } from '@/common/block';
 
 import { NonceProvider } from './nonce-provider/nonce-provider';
 import { Batch, MatchOrders } from './types';
@@ -23,18 +24,13 @@ export class MatchExecutor {
     this._contract = new ethers.Contract(this.address, MatchExecutorAbi, this.owner);
   }
 
-  getNativeTxn(
-    matches: MatchOrders[],
-    maxFeePerGas: BigNumberish,
-    maxPriorityFeePerGas: BigNumberish,
-    gasLimit: BigNumberish
-  ) {
+  getNativeTxn(matches: MatchOrders[], targetBlock: BlockWithGas, gasLimit: BigNumberish) {
     const encoded = this._contract.interface.encodeFunctionData('executeNativeMatches', [matches]);
     const txn = {
-      from: this.owner.address,
+      from: this.owner.address.toLowerCase(),
       to: this.address,
-      maxFeePerGas: maxFeePerGas.toString(),
-      maxPriorityFeePerGas: maxPriorityFeePerGas.toString(),
+      maxFeePerGas: targetBlock.maxFeePerGas,
+      maxPriorityFeePerGas: targetBlock.maxPriorityFeePerGas,
       gasLimit: gasLimit.toString(),
       data: encoded
     };
@@ -42,13 +38,13 @@ export class MatchExecutor {
     return txn;
   }
 
-  getBrokerTxn(batch: Batch, maxFeePerGas: BigNumberish, maxPriorityFeePerGas: BigNumberish, gasLimit: BigNumberish) {
+  getBrokerTxn(batch: Batch, targetBlock: BlockWithGas, gasLimit: BigNumberish) {
     const encoded = this._contract.interface.encodeFunctionData('executeBrokerMatches', [[batch]]);
     const txn = {
-      from: this.owner.address,
+      from: this.owner.address.toLowerCase(),
       to: this.address,
-      maxFeePerGas: maxFeePerGas.toString(),
-      maxPriorityFeePerGas: maxPriorityFeePerGas.toString(),
+      maxFeePerGas: targetBlock.maxFeePerGas,
+      maxPriorityFeePerGas: targetBlock.maxPriorityFeePerGas,
       gasLimit: gasLimit.toString(),
       data: encoded
     };

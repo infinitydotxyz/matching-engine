@@ -1,0 +1,20 @@
+[profile.default]
+src = 'contracts'
+out = 'artifacts'
+libs = ["node_modules", "lib"]
+remappings = [
+    '@openzeppelin/=node_modules/@openzeppelin/',
+    '@uniswap/=node_modules/@uniswap/',
+    'base64-sol/=node_modules/base64-sol/',
+    'hardhat/=node_modules/hardhat/',
+]
+chain_id = 1
+fork_block_number = 16336200
+fork_chain_id = 1
+block_gas_limit = 30000000
+
+[rpc_endpoints]
+mainnet = "${MAINNET_HTTP_PROVIDER_URL}"
+goerli = "${GOERLI_HTTP_PROVIDER_URL}"
+
+# See more config options https://github.com/foundry-rs/foundry/tree/master/config

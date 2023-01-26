@@ -22,7 +22,7 @@ export abstract class SeaportOrder extends NonNativeOrder<Seaport.Types.OrderCom
     return this._orderData.gasUsage;
   }
 
-  constructor(_orderData: OrderData, _chainId: ChainId, provider: ethers.providers.JsonRpcProvider) {
+  constructor(_orderData: OrderData, _chainId: ChainId, provider: ethers.providers.StaticJsonRpcProvider) {
     super(_orderData, _chainId, provider);
     this._order = new Seaport.Order(this.chainId, this._sourceParams);
   }
@@ -263,11 +263,8 @@ export abstract class SeaportOrder extends NonNativeOrder<Seaport.Types.OrderCom
   }
 
   async getExecutionInfo(taker: string): Promise<Omit<NonNativeMatchExecutionInfo, 'nativeExecutionTransfers'>> {
-    const conduitController = new ethers.Contract(
-      Seaport.Addresses.ConduitController[this.chainId],
-      SeaportConduitControllerAbi,
-      this._provider
-    );
+    const conduit = Seaport.Addresses.ConduitController[this.chainId];
+    const conduitController = new ethers.Contract(conduit, SeaportConduitControllerAbi, this._provider);
 
     const makerConduit = BigNumber.from(this._sourceParams.conduitKey).eq(0)
       ? Seaport.Addresses.Exchange[this.chainId]
