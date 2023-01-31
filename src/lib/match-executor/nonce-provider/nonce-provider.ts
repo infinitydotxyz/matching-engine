@@ -1,7 +1,7 @@
 import { BigNumber, BigNumberish, ethers } from 'ethers';
 import Redlock, { ExecutionError, RedlockAbortSignal } from 'redlock';
 
-import { InfinityExchangeABI } from '@infinityxyz/lib/abi';
+import { FlowExchangeABI } from '@infinityxyz/lib/abi';
 import { ChainId } from '@infinityxyz/lib/types/core';
 
 import { logger } from '@/common/logger';
@@ -123,7 +123,7 @@ export class NonceProvider {
   protected async _loadNonce() {
     const snap = await this._ref.get();
 
-    const exchange = new ethers.Contract(this._exchangeAddress, InfinityExchangeABI, this._provider);
+    const exchange = new ethers.Contract(this._exchangeAddress, FlowExchangeABI, this._provider);
     const minNonce = BigNumber.from((await exchange.userMinOrderNonce(this._accountAddress)) as BigNumberish);
 
     let data = snap.data();

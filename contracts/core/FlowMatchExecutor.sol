@@ -9,24 +9,24 @@ import {IERC721} from '@openzeppelin/contracts/token/ERC721/IERC721.sol';
 import {IERC1271} from '@openzeppelin/contracts/interfaces/IERC1271.sol';
 import {IERC721Receiver} from '@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol';
 import {EnumerableSet} from '@openzeppelin/contracts/utils/structs/EnumerableSet.sol';
-import {MatchExecutorTypes} from '../libs/MatchExecutorTypes.sol';
+import {FlowMatchExecutorTypes} from '../libs/FlowMatchExecutorTypes.sol';
 import {OrderTypes} from '../libs/OrderTypes.sol';
 import {SignatureChecker} from '../libs/SignatureChecker.sol';
-import {IInfinityExchange} from '../interfaces/IInfinityExchange.sol';
+import {IFlowExchange} from '../interfaces/IFlowExchange.sol';
 
 /**
-@title MatchExecutor
+@title FlowMatchExecutor
 @author Joe
 @notice The contract that is called to execute order matches
 */
-contract MatchExecutor is IERC1271, IERC721Receiver, Ownable, Pausable {
+contract FlowMatchExecutor is IERC1271, IERC721Receiver, Ownable, Pausable {
   using EnumerableSet for EnumerableSet.AddressSet;
 
   /*//////////////////////////////////////////////////////////////
                                 ADDRESSES
     //////////////////////////////////////////////////////////////*/
 
-  IInfinityExchange public immutable exchange;
+  IFlowExchange public immutable exchange;
 
   /*//////////////////////////////////////////////////////////////
                               EXCHANGE STATES
@@ -40,16 +40,20 @@ contract MatchExecutor is IERC1271, IERC721Receiver, Ownable, Pausable {
       //////////////////////////////////////////////////////////////*/
   event EnabledExchangeAdded(address indexed exchange);
   event EnabledExchangeRemoved(address indexed exchange);
+  event InitiatorChanged(address indexed oldVal, address indexed newVal);
 
   ///@notice admin events
   event ETHWithdrawn(address indexed destination, uint256 amount);
   event ERC20Withdrawn(address indexed destination, address indexed currency, uint256 amount);
 
+  address public initiator;
+
   /*//////////////////////////////////////////////////////////////
                                CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
-  constructor(IInfinityExchange _exchange) {
+  constructor(IFlowExchange _exchange, address _initiator) {
     exchange = _exchange;
+    initiator = _initiator;
   }
 
   // solhint-disable-next-line no-empty-blocks
@@ -78,7 +82,8 @@ contract MatchExecutor is IERC1271, IERC721Receiver, Ownable, Pausable {
    * @notice The entry point for executing brokerage matches. Callable only by owner
    * @param batches The batches of calls to make
    */
-  function executeBrokerMatches(MatchExecutorTypes.Batch[] calldata batches) external onlyOwner whenNotPaused {
+  function executeBrokerMatches(FlowMatchExecutorTypes.Batch[] calldata batches) external whenNotPaused {
+    require(msg.sender == initiator, 'only initiator can call');
     uint256 numBatches = batches.length;
     for (uint256 i; i < numBatches; ) {
       _broker(batches[i].externalFulfillments);
@@ -93,7 +98,8 @@ contract MatchExecutor is IERC1271, IERC721Receiver, Ownable, Pausable {
    * @notice The entry point for executing native matches. Callable only by owner
    * @param matches The matches to make
    */
-  function executeNativeMatches(MatchExecutorTypes.MatchOrders[] calldata matches) external onlyOwner whenNotPaused {
+  function executeNativeMatches(FlowMatchExecutorTypes.MatchOrders[] calldata matches) external whenNotPaused {
+    require(msg.sender == initiator, 'only initiator can call');
     _matchOrders(matches);
   }
 
@@ -142,7 +148,7 @@ contract MatchExecutor is IERC1271, IERC721Receiver, Ownable, Pausable {
    * @notice broker a trade by fulfilling orders on other exchanges and transferring nfts to the intermediary
    * @param externalFulfillments The specification of the external calls to make and nfts to transfer
    */
-  function _broker(MatchExecutorTypes.ExternalFulfillments calldata externalFulfillments) internal {
+  function _broker(FlowMatchExecutorTypes.ExternalFulfillments calldata externalFulfillments) internal {
     uint256 numCalls = externalFulfillments.calls.length;
     if (numCalls > 0) {
       for (uint256 i; i < numCalls; ) {
@@ -175,7 +181,7 @@ contract MatchExecutor is IERC1271, IERC721Receiver, Ownable, Pausable {
    * @notice Execute a call to the specified contract
    * @param params The call to execute
    */
-  function _call(MatchExecutorTypes.Call memory params) internal returns (bytes memory) {
+  function _call(FlowMatchExecutorTypes.Call memory params) internal returns (bytes memory) {
     if (params.isPayable) {
       require(_enabledExchanges.contains(params.to), 'contract is not enabled');
       (bool _success, bytes memory _result) = params.to.call{value: params.value}(params.data);
@@ -193,16 +199,16 @@ contract MatchExecutor is IERC1271, IERC721Receiver, Ownable, Pausable {
    * @notice Function called to execute a batch of matches by calling the exchange contract
    * @param matches The batch of matches to execute on the exchange
    */
-  function _matchOrders(MatchExecutorTypes.MatchOrders[] calldata matches) internal {
+  function _matchOrders(FlowMatchExecutorTypes.MatchOrders[] calldata matches) internal {
     uint256 numMatches = matches.length;
     if (numMatches > 0) {
       for (uint256 i; i < numMatches; ) {
-        MatchExecutorTypes.MatchOrdersType matchType = matches[i].matchType;
-        if (matchType == MatchExecutorTypes.MatchOrdersType.OneToOneSpecific) {
+        FlowMatchExecutorTypes.MatchOrdersType matchType = matches[i].matchType;
+        if (matchType == FlowMatchExecutorTypes.MatchOrdersType.OneToOneSpecific) {
           exchange.matchOneToOneOrders(matches[i].buys, matches[i].sells);
-        } else if (matchType == MatchExecutorTypes.MatchOrdersType.OneToOneUnspecific) {
+        } else if (matchType == FlowMatchExecutorTypes.MatchOrdersType.OneToOneUnspecific) {
           exchange.matchOrders(matches[i].sells, matches[i].buys, matches[i].constructs);
-        } else if (matchType == MatchExecutorTypes.MatchOrdersType.OneToMany) {
+        } else if (matchType == FlowMatchExecutorTypes.MatchOrdersType.OneToMany) {
           if (matches[i].buys.length == 1) {
             exchange.matchOneToManyOrders(matches[i].buys[0], matches[i].sells);
           } else if (matches[i].sells.length == 1) {
@@ -218,6 +224,20 @@ contract MatchExecutor is IERC1271, IERC721Receiver, Ownable, Pausable {
         }
       }
     }
+  }
+
+  // ======================================================= VIEW FUNCTIONS ============================================================
+
+  function numEnabledExchanges() external view returns (uint256) {
+    return _enabledExchanges.length();
+  }
+
+  function getEnabledExchangeAt(uint256 index) external view returns (address) {
+    return _enabledExchanges.at(index);
+  }
+
+  function isExchangeEnabled(address _exchange) external view returns (bool) {
+    return _enabledExchanges.contains(_exchange);
   }
 
   //////////////////////////////////////////////////// ADMIN FUNCTIONS ///////////////////////////////////////////////////////
@@ -251,6 +271,12 @@ contract MatchExecutor is IERC1271, IERC721Receiver, Ownable, Pausable {
   function removeEnabledExchange(address _exchange) external onlyOwner {
     _enabledExchanges.remove(_exchange);
     emit EnabledExchangeRemoved(_exchange);
+  }
+
+  function updateInitiator(address _initiator) external onlyOwner {
+    address oldVal = initiator;
+    initiator = _initiator;
+    emit InitiatorChanged(oldVal, _initiator);
   }
 
   /**

@@ -77,8 +77,4 @@ export interface OneSellToManyBuyMatch {
   matchType: MatchOrdersType.OneToMany;
 }
 
-export type InfinityMatch =
-  | OneToOneSpecificMatch
-  | OneToOneUnspecificMatch
-  | OneBuyToManySellMatch
-  | OneSellToManyBuyMatch;
+export type FlowMatch = OneToOneSpecificMatch | OneToOneUnspecificMatch | OneBuyToManySellMatch | OneSellToManyBuyMatch;

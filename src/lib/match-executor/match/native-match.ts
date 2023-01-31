@@ -7,17 +7,17 @@ import { Common } from '@reservoir0x/sdk';
 import { Block, BlockWithMaxFeePerGas } from '@/common/block';
 import { ValidityResult } from '@/lib/utils/validity-result';
 
-import * as Infinity from '../order/infinity';
+import * as Flow from '../order/flow';
 import { Erc721Transfer, EthTransfer, TransferKind, WethTransfer } from '../simulator/types';
 import { MatchOrders, MatchOrdersType } from '../types';
 import { OrderMatch } from './order-match.abstract';
 import { Match, NativeMatchExecutionInfo } from './types';
 
 export class NativeMatch extends OrderMatch {
-  protected _listing: Infinity.MatchExecutorOrder | Infinity.EndUserOrder;
-  protected _offer: Infinity.MatchExecutorOrder | Infinity.EndUserOrder;
+  protected _listing: Flow.MatchExecutorOrder | Flow.EndUserOrder;
+  protected _offer: Flow.MatchExecutorOrder | Flow.EndUserOrder;
 
-  constructor(match: Match, protected _chainId: ChainId, orderFactory: Infinity.OrderFactory) {
+  constructor(match: Match, protected _chainId: ChainId, orderFactory: Flow.OrderFactory) {
     super(match);
     this._listing = orderFactory.createOrder(match.listing);
     this._offer = orderFactory.createOrder(match.offer);

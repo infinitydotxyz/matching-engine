@@ -7,11 +7,11 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol"
 import { Pausable } from "@openzeppelin/contracts/security/Pausable.sol";
 
 /**
- * @title InfinityStaker
+ * @title FlowStaker
  * @author nneverlander. Twitter @nneverlander
  * @notice The staker contract that allows people to stake tokens and earn voting power to be used in curation and possibly other places
  */
-contract InfinityStaker is Ownable, Pausable {
+contract FlowStaker is Ownable, Pausable {
     struct StakeAmount {
         uint256 amount;
         uint256 timestamp;
@@ -36,12 +36,12 @@ contract InfinityStaker is Ownable, Pausable {
     mapping(address => mapping(Duration => StakeAmount))
         public userstakedAmounts;
 
-    ///@dev Infinity token address
+    ///@dev Flow token address
     // solhint-disable var-name-mixedcase
-    address public immutable INFINITY_TOKEN;
+    address public immutable FLOW_TOKEN;
 
-    ///@dev Infinity treasury address - will be a EOA/multisig
-    address public infinityTreasury;
+    ///@dev Flow treasury address - will be a EOA/multisig
+    address public flowTreasury;
 
     /**@dev Power levels to reach the specified stake thresholds. Users can reach these levels 
           either by staking the specified number of tokens for no duration or a less number of tokens but with higher durations.
@@ -75,12 +75,12 @@ contract InfinityStaker is Ownable, Pausable {
     event StakeLevelThresholdUpdated(StakeLevel stakeLevel, uint32 threshold);
 
     /**
-    @param _tokenAddress The address of the Infinity token contract
-    @param _infinityTreasury The address of the Infinity treasury used for sending rageQuit penalties
+    @param _tokenAddress The address of the Flow token contract
+    @param _flowTreasury The address of the Flow treasury used for sending rageQuit penalties
    */
-    constructor(address _tokenAddress, address _infinityTreasury) {
-        INFINITY_TOKEN = _tokenAddress;
-        infinityTreasury = _infinityTreasury;
+    constructor(address _tokenAddress, address _flowTreasury) {
+        FLOW_TOKEN = _tokenAddress;
+        flowTreasury = _flowTreasury;
     }
 
     // =================================================== USER FUNCTIONS =======================================================
@@ -97,7 +97,7 @@ contract InfinityStaker is Ownable, Pausable {
         userstakedAmounts[msg.sender][duration].amount += amount;
         userstakedAmounts[msg.sender][duration].timestamp = block.timestamp;
         // perform transfer; no need for safeTransferFrom since we know the implementation of the token contract
-        IERC20(INFINITY_TOKEN).transferFrom(msg.sender, address(this), amount);
+        IERC20(FLOW_TOKEN).transferFrom(msg.sender, address(this), amount);
         // emit event
         emit Staked(msg.sender, amount, duration);
     }
@@ -170,7 +170,7 @@ contract InfinityStaker is Ownable, Pausable {
             vestedTwelveMonths
         );
         // perform transfer
-        IERC20(INFINITY_TOKEN).transfer(msg.sender, amount);
+        IERC20(FLOW_TOKEN).transfer(msg.sender, amount);
         // emit event
         emit UnStaked(msg.sender, amount);
     }
@@ -183,8 +183,8 @@ contract InfinityStaker is Ownable, Pausable {
         // update storage
         _clearUserStakedAmounts(msg.sender);
         // perform transfers
-        IERC20(INFINITY_TOKEN).transfer(msg.sender, totalToUser);
-        IERC20(INFINITY_TOKEN).transfer(infinityTreasury, penalty);
+        IERC20(FLOW_TOKEN).transfer(msg.sender, totalToUser);
+        IERC20(FLOW_TOKEN).transfer(flowTreasury, penalty);
         // emit event
         emit RageQuit(msg.sender, totalToUser, penalty);
     }
@@ -219,7 +219,7 @@ contract InfinityStaker is Ownable, Pausable {
 
     /**
      * @notice Gets rageQuit amounts for a user after applying penalties
-     * @dev Penalty amounts are sent to Infinity treasury
+     * @dev Penalty amounts are sent to Flow treasury
      * @param user address of the user
      * @return Total amount to user and penalties
      */
@@ -488,12 +488,12 @@ contract InfinityStaker is Ownable, Pausable {
         );
     }
 
-    /// @dev Admin function to update Infinity treasury
-    function updateInfinityTreasury(
-        address _infinityTreasury
+    /// @dev Admin function to update Flow treasury
+    function updateFlowTreasury(
+        address _flowTreasury
     ) external onlyOwner {
-        require(_infinityTreasury != address(0), "invalid address");
-        infinityTreasury = _infinityTreasury;
+        require(_flowTreasury != address(0), "invalid address");
+        flowTreasury = _flowTreasury;
     }
 
     /// @dev Admin function to pause the contract

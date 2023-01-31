@@ -2,7 +2,7 @@ import { BigNumberish, ethers } from 'ethers';
 import { defaultAbiCoder, splitSignature } from 'ethers/lib/utils';
 
 import { ChainId, ChainOBOrder } from '@infinityxyz/lib/types/core';
-import { Infinity } from '@reservoir0x/sdk';
+import { Flow } from '@reservoir0x/sdk';
 
 import MatchExecutorAbi from '@/common/abi/match-executor.json';
 import { OrderData } from '@/lib/orderbook/v1/types';
@@ -87,7 +87,7 @@ export class MatchExecutorOrder extends Order {
   }
 
   protected async _signOrder(_unsignedOrder: ChainOBOrder) {
-    const unsignedOrder = new Infinity.Order(parseInt(this._chainId, 10), {
+    const unsignedOrder = new Flow.Order(parseInt(this._chainId, 10), {
       ..._unsignedOrder,
       constraints: _unsignedOrder.constraints.map((c) => c.toString())
     });

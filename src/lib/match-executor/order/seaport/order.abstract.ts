@@ -1,7 +1,7 @@
 import { BigNumber, ethers } from 'ethers';
 
 import { ChainId, ChainNFTs } from '@infinityxyz/lib/types/core';
-import { Infinity, Common, Seaport } from '@reservoir0x/sdk';
+import { Common, Flow, Seaport } from '@reservoir0x/sdk';
 
 import SeaportConduitControllerAbi from '@/common/abi/seaport-conduit-controller.json';
 import { OrderData } from '@/lib/orderbook/v1/types';
@@ -27,10 +27,10 @@ export abstract class SeaportOrder extends NonNativeOrder<Seaport.Types.OrderCom
     this._order = new Seaport.Order(this.chainId, this._sourceParams);
   }
 
-  getExternalFulfillment(taker: string): Promise<{ call: Call; nftsToTransfer: ChainNFTs[] }> {
+  async getExternalFulfillment(taker: string): Promise<{ call: Call; nftsToTransfer: ChainNFTs[] }> {
     const exchange = new Seaport.Exchange(this.chainId);
     const matchParams = this._order.buildMatching();
-    const txn = exchange.fillOrderTx(taker, this._order, matchParams);
+    const txn = await exchange.fillOrderTx(taker, this._order, matchParams);
     const value = BigNumber.from(txn.value ?? '0');
 
     const call: Call = {
@@ -242,11 +242,11 @@ export abstract class SeaportOrder extends NonNativeOrder<Seaport.Types.OrderCom
       }
     }
 
-    const orderItems: Infinity.Types.OrderNFTs[] = Object.entries(nfts).map(([key, value]) => {
+    const orderItems: Flow.Types.OrderNFTs[] = Object.entries(nfts).map(([key, value]) => {
       const collection = key;
       const nft = {
         collection,
-        tokens: [] as Infinity.Types.OrderNFTs['tokens']
+        tokens: [] as Flow.Types.OrderNFTs['tokens']
       };
 
       for (const [tokenId, quantity] of Object.entries(value)) {

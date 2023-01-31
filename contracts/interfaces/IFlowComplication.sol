@@ -4,11 +4,11 @@ pragma solidity 0.8.14;
 import { OrderTypes } from "../libs/OrderTypes.sol";
 
 /**
- * @title IComplication
+ * @title IFlowComplication
  * @author nneverlander. Twitter @nneverlander
  * @notice Complication interface that must be implemented by all complications (execution strategies)
  */
-interface IComplication {
+interface IFlowComplication {
     function canExecMatchOneToOne(
         OrderTypes.MakerOrder calldata makerOrder1,
         OrderTypes.MakerOrder calldata makerOrder2

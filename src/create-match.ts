@@ -2,7 +2,7 @@ import { ethers } from 'ethers';
 import { parseEther, parseUnits } from 'ethers/lib/utils';
 
 import { ChainId } from '@infinityxyz/lib/types/core';
-import { Infinity, Common, Seaport } from '@reservoir0x/sdk';
+import { Common, Flow, Seaport } from '@reservoir0x/sdk';
 
 import { JobData } from '@/lib/order-relay/v1/order-relay';
 
@@ -10,7 +10,7 @@ import { logger } from './common/logger';
 import { getNetworkConfig } from './config';
 
 export async function createMatch(chainId: ChainId) {
-  const matches: { seaportJob: JobData; infinityJob: JobData }[] = [];
+  const matches: { seaportJob: JobData; flowJob: JobData }[] = [];
   const network = await getNetworkConfig(chainId);
   const chainIdInt = parseInt(chainId, 10);
   const gwei = parseUnits('1', 'gwei');
@@ -48,9 +48,9 @@ export async function createMatch(chainId: ChainId) {
       const seaportSellOrder = seaportBuilder.build(seaportParams as Parameters<typeof seaportBuilder.build>[0]);
       await seaportSellOrder.sign(seller);
 
-      const orderBuilder = new Infinity.Builders.SingleToken(chainIdInt);
+      const orderBuilder = new Flow.Builders.SingleToken(chainIdInt);
 
-      const correspondingOrder = new Infinity.Builders.SingleToken(chainIdInt).build({
+      const correspondingOrder = new Flow.Builders.SingleToken(chainIdInt).build({
         isSellOrder: true,
         tokenId: tokenId.toString(),
         collection: network.test.erc721.contract.address,
@@ -65,7 +65,7 @@ export async function createMatch(chainId: ChainId) {
         currency: Common.Addresses.Weth[chainId]
       });
 
-      const fillOrderTx = seaportExchange.fillOrderTx(
+      const fillOrderTx = await seaportExchange.fillOrderTx(
         network.initiator.address,
         seaportSellOrder,
         seaportSellOrder.buildMatching()
@@ -84,7 +84,7 @@ export async function createMatch(chainId: ChainId) {
         }
       };
 
-      const infinityBuyOrder = orderBuilder.build({
+      const flowBuyOrder = orderBuilder.build({
         isSellOrder: false,
         tokenId: tokenId.toString(),
         collection: network.test.erc721.contract.address,
@@ -99,21 +99,21 @@ export async function createMatch(chainId: ChainId) {
         currency: Common.Addresses.Weth[chainId]
       });
 
-      await infinityBuyOrder.sign(network.test.testAccount);
+      await flowBuyOrder.sign(network.test.testAccount);
 
-      const infinityJob: JobData = {
-        id: infinityBuyOrder.hash(),
+      const flowJob: JobData = {
+        id: flowBuyOrder.hash(),
         orderData: {
-          id: infinityBuyOrder.hash(),
-          order: infinityBuyOrder.getSignedOrder(),
-          source: 'infinity',
-          sourceOrder: infinityBuyOrder.getSignedOrder(),
+          id: flowBuyOrder.hash(),
+          order: flowBuyOrder.getSignedOrder(),
+          source: 'flow',
+          sourceOrder: flowBuyOrder.getSignedOrder(),
           gasUsage: '0',
           status: 'active'
         }
       };
 
-      matches.push({ seaportJob, infinityJob });
+      matches.push({ seaportJob, flowJob });
     } catch (err) {
       logger.error('create-matches', `create matches - ${err}`);
     }

@@ -4,11 +4,11 @@ pragma solidity 0.8.14;
 import { OrderTypes } from "../libs/OrderTypes.sol";
 
 /**
- * @title IInfinityExchange
+ * @title IFlowExchange
  * @author Joe
- * @notice Exchange interface that must be implemented by the Infinity Exchange
+ * @notice Exchange interface that must be implemented by the Flow Exchange
  */
-interface IInfinityExchange {
+interface IFlowExchange {
     function matchOneToOneOrders(
         OrderTypes.MakerOrder[] calldata makerOrders1,
         OrderTypes.MakerOrder[] calldata makerOrders2

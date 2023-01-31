@@ -20,7 +20,7 @@ import { MatchExecutor } from '@/lib/match-executor/match-executor';
 import { NativeMatch } from '@/lib/match-executor/match/native-match';
 import { NonNativeMatch } from '@/lib/match-executor/match/non-native-match';
 import { Match, NativeMatchExecutionInfo, NonNativeMatchExecutionInfo } from '@/lib/match-executor/match/types';
-import { OrderFactory } from '@/lib/match-executor/order/infinity';
+import { OrderFactory } from '@/lib/match-executor/order/flow';
 import { OrderExecutionSimulator } from '@/lib/match-executor/simulator/order-execution-simulator';
 import { ExecutionState, Transfer, TransferKind } from '@/lib/match-executor/simulator/types';
 import { Batch, ExternalFulfillments, MatchOrders } from '@/lib/match-executor/types';

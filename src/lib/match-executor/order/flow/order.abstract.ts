@@ -12,10 +12,10 @@ import { SourceOrder } from '../source-order';
 
 export abstract class Order extends SourceOrder<ChainOBOrder> {
   static isMatchExecutorOrder(orderData: OrderData) {
-    return orderData.source !== 'infinity' || orderData.order.signer === constants.AddressZero;
+    return orderData.source !== 'flow' || orderData.order.signer === constants.AddressZero;
   }
 
-  public source: OrderSource = 'infinity';
+  public source: OrderSource = 'flow';
 
   abstract readonly isMatchExecutorOrder: boolean;
 
@@ -80,16 +80,16 @@ export abstract class Order extends SourceOrder<ChainOBOrder> {
 
   protected _checkValid() {
     if (!this._params.sig && this.maker !== constants.AddressZero) {
-      throw new OrderError('order not signed', ErrorCode.NotSigned, '', 'infinity', 'unsupported');
+      throw new OrderError('order not signed', ErrorCode.NotSigned, '', 'flow', 'unsupported');
     }
     const complication = getOBComplicationAddress(this._chainId);
 
     if (complication === constants.AddressZero || this.complication !== complication) {
       throw new OrderError(
         'invalid complication',
-        ErrorCode.InfinityComplication, // todo: joe change this to FlowComplication
+        ErrorCode.FlowComplication,
         this._params.execParams[0],
-        'infinity',
+        'flow',
         'unsupported'
       );
     }

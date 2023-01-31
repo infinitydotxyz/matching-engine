@@ -7,7 +7,7 @@ import { Block, BlockWithMaxFeePerGas } from '@/common/block';
 import { ValidityResult } from '@/lib/utils/validity-result';
 
 import { Seaport } from '../order';
-import * as Infinity from '../order/infinity';
+import * as Flow from '../order/flow';
 import { Call, MatchOrders } from '../types';
 import { NativeMatch } from './native-match';
 import { OrderMatch } from './order-match.abstract';
@@ -20,13 +20,13 @@ export class NonNativeMatch extends OrderMatch {
   constructor(
     match: Match,
     protected _chainId: ChainId,
-    orderFactory: Infinity.OrderFactory,
+    orderFactory: Flow.OrderFactory,
     protected provider: ethers.providers.StaticJsonRpcProvider,
     protected _matchExecutorAddress: string
   ) {
     super(match);
 
-    const nonNativeOrders = [match.listing, match.offer].filter((item) => item.source !== 'infinity');
+    const nonNativeOrders = [match.listing, match.offer].filter((item) => item.source !== 'flow');
     const nonNativeOrder = nonNativeOrders[0];
     if (nonNativeOrders.length !== 1 || !nonNativeOrder) {
       throw new Error('Expected one non-native order');

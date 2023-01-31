@@ -32,9 +32,9 @@ export function getOrder(
   kind: Kind,
   asset: { collection: string; tokenId?: string }
 ): { orderData: OrderData; order: Order } {
-  const envConstants = chainConstants[chainId]['dev']['v2'];
+  const envConstants = chainConstants[chainId]['dev']['flow'];
   const currency = envConstants.wethAddress;
-  const complication = envConstants.infinityContracts.obComplicationAddress;
+  const complication = envConstants.infinityContracts?.obComplicationAddress ?? '';
   const id = nanoid();
   const chainOrder = {
     isSellOrder: isSellOrder,
@@ -69,7 +69,7 @@ export function getOrder(
   const data = {
     id,
     order: chainOrder,
-    source: 'infinity' as OrderSource,
+    source: 'flow' as OrderSource,
     sourceOrder: chainOrder,
     gasUsage: '0',
     status: 'active' as OrderStatus

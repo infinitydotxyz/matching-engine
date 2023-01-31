@@ -10,7 +10,7 @@ export class EndUserOrder extends Order {
   }
 
   _checkOrderKindValid() {
-    if (this._orderData.source !== 'infinity' || !this._params.sig) {
+    if (this._orderData.source !== 'flow' || !this._params.sig) {
       throw new OrderError(
         'Invalid end user order',
         ErrorCode.Unexpected,

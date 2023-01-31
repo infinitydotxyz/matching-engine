@@ -54,7 +54,7 @@ export abstract class SourceOrder<RawOrder = never> {
   abstract get isSellOrder(): boolean;
 
   protected _baseCheck() {
-    if (this.source !== 'infinity') {
+    if (this.source !== 'flow') {
       /**
        * only sell orders are supported
        */

@@ -409,7 +409,7 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
            */
           const bufferGasUsage = 100_000;
 
-          const sourceGasUsage = mainOrder.source === 'infinity' ? matchOrderData.gasUsage : mainOrder.gasUsage;
+          const sourceGasUsage = mainOrder.source === 'flow' ? matchOrderData.gasUsage : mainOrder.gasUsage;
           const gasUsage = parseInt(sourceGasUsage, 10) + bufferGasUsage;
           const maxSourceGasPriceWei = BigNumber.from(executionPrices.arbitrageWei).div(gasUsage);
           const maxSourceGasPriceGwei = parseFloat(formatUnits(maxSourceGasPriceWei, 'gwei'));

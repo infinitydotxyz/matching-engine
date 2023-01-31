@@ -9,11 +9,11 @@ export abstract class OrderMatch {
   }
 
   get isListingNative() {
-    return this._match.listing.source === 'infinity';
+    return this._match.listing.source === 'flow';
   }
 
   get isOfferNative() {
-    return this._match.offer.source === 'infinity';
+    return this._match.offer.source === 'flow';
   }
 
   get isNative() {

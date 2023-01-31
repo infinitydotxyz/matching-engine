@@ -12,6 +12,7 @@ chain_id = 1
 fork_block_number = 16336200
 fork_chain_id = 1
 block_gas_limit = 30000000
+via_ir = true
 
 [rpc_endpoints]
 mainnet = "${MAINNET_HTTP_PROVIDER_URL}"
