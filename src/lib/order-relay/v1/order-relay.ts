@@ -72,6 +72,7 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
       }
       successful = true;
     } catch (err) {
+      logger.error('order-relay', `Failed to process order ${job.data.id}: ${(err as Error).message}`);
       successful = false;
     }
 

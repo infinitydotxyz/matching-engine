@@ -13,15 +13,15 @@ import { AbstractOrderbookStorage } from './orderbook-storage.abstract';
 export type OrderValidationResponse = { isValid: true } | { isValid: false; error: OrderbookOrderError };
 
 export abstract class AbstractOrderbook<T, V> {
-  constructor(protected _storage: AbstractOrderbookStorage<T, V>) {}
+  constructor(protected _storage: AbstractOrderbookStorage<T, V>, protected _supportedComplications: Set<string>) {}
 
   abstract isOrderValid(order: T): Promise<OrderValidationResponse> | OrderValidationResponse;
 
   async checkOrder(order: T): Promise<void> {
-    const { isValid } = await this.isOrderValid(order);
-    if (!isValid) {
+    const result = await this.isOrderValid(order);
+    if (!result.isValid) {
       const orderId = this._storage.getOrderId(order);
-      throw new OrderbookOrderError(orderId, ErrorCode.InvalidOrder, 'Invalid order');
+      throw new OrderbookOrderError(orderId, ErrorCode.InvalidOrder, result.error.message);
     }
   }
 

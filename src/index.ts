@@ -1,3 +1,5 @@
+import { getOBComplicationAddress } from '@infinityxyz/lib/utils';
+
 import { config, getNetworkConfig } from '@/config';
 
 import { firestore, redis, redlock, storage } from './common/db';
@@ -22,7 +24,8 @@ async function main() {
   );
 
   const orderbookStorage = new OrderbookV1.OrderbookStorage(redis, config.env.chainId);
-  const orderbook = new OrderbookV1.Orderbook(orderbookStorage);
+  const complication = getOBComplicationAddress(config.env.chainId);
+  const orderbook = new OrderbookV1.Orderbook(orderbookStorage, new Set([complication]));
 
   const nonceProvider = new NonceProvider(
     config.env.chainId,
