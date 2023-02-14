@@ -1,4 +1,5 @@
 import { BulkJobOptions, Job } from 'bullmq';
+import { ethers } from 'ethers';
 import { Storage } from 'firebase-admin/lib/storage/storage';
 import { Redis } from 'ioredis';
 import * as ReadLine from 'readline';
@@ -7,7 +8,6 @@ import Redlock, { ExecutionError, RedlockAbortSignal, ResourceLockedError } from
 import { ChainId, OrderStatusEvent } from '@infinityxyz/lib/types/core';
 import { sleep } from '@infinityxyz/lib/utils';
 
-import { logger } from '@/common/logger';
 import { config } from '@/config';
 import { streamQueryWithRef } from '@/lib/firestore';
 import { MatchingEngine } from '@/lib/matching-engine/v1';
@@ -24,6 +24,7 @@ export interface SnapshotMetadata {
   chainId: ChainId;
   numOrders: number;
   timestamp: number;
+  collection: string;
 }
 
 export interface JobData {
@@ -49,10 +50,15 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
     protected _redlock: Redlock,
     orderbook: OB.Orderbook,
     db: Redis,
+    public readonly collectionAddress: string,
     options?: Partial<ProcessOptions>
   ) {
     const version = 'v1';
-    super(orderbook, db, `order-relay:${version}`, options);
+    super(orderbook, db, `order-relay:${version}:collection:${collectionAddress}`, options);
+
+    if (!this.collectionAddress || !ethers.utils.isAddress(this.collectionAddress)) {
+      throw new Error('Invalid collection address');
+    }
     this._version = version;
   }
 
@@ -73,7 +79,7 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
       }
       successful = true;
     } catch (err) {
-      logger.error('order-relay', `Failed to process order ${job.data.id}: ${(err as Error).message}`);
+      this.error(`Failed to process order ${job.data.id}: ${(err as Error).message}`);
       successful = false;
     }
 
@@ -89,14 +95,14 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
   }
 
   public async run(sync = true) {
-    const orderSyncKey = `order-relay:chain:${config.env.chainId}:lock`;
+    const orderSyncKey = `order-relay:chain:${config.env.chainId}:collection:${this.collectionAddress}:lock`;
     const lockDuration = 15_000;
 
     /**
      * start processing jobs from the queue
      */
     const runPromise = super._run().catch((err: Error) => {
-      logger.error('order-relay', `Order relay - Unexpected error: ${err.message}`);
+      this.error(`Unexpected error: ${err.message}`);
     });
 
     if (sync) {
@@ -111,7 +117,7 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
             })
             .catch((err) => {
               if (err instanceof ExecutionError) {
-                logger.warn('order-relay', 'Failed to acquire lock, another instance is syncing');
+                this.warn('Failed to acquire lock, another instance is syncing');
               } else {
                 throw err;
               }
@@ -121,7 +127,7 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
            */
           await syncPromise;
         } catch (err) {
-          logger.error('order-relay', `Order relay - Unexpected error: ${err}`);
+          this.error(`Unexpected error: ${err}`);
         }
         /**
          * wait before trying to acquire the lock again
@@ -153,7 +159,7 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
 
   protected async _sync(signal: RedlockAbortSignal) {
     // to begin syncing we need to make sure we are the only instance syncing redis
-    const syncCursorKey = `order-relay:chain:${config.env.chainId}:order-events:sync-cursor`;
+    const syncCursorKey = `order-relay:chain:${config.env.chainId}:collection:${this.collectionAddress}:order-events:sync-cursor`;
     const encodedSyncCursor = await this._db.get(syncCursorKey);
 
     let syncCursor: OrderStatusEventSyncCursor | undefined;
@@ -225,6 +231,7 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
 
     const orderStatusEventsQuery = orderStatusEvents
       .where('chainId', '==', config.env.chainId)
+      .where('collection', '==', this.collectionAddress)
       .where('isMostRecent', '==', true)
       .orderBy('timestamp', 'asc')
       .orderBy('id', 'asc')
@@ -243,7 +250,7 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
         async (snapshot) => {
           try {
             this._checkSignal(signal);
-            logger.log('order-relay', `Received ${snapshot.docChanges().length} order status events`);
+            this.log(`Received ${snapshot.docChanges().length} order status events`);
 
             const eventsByType = snapshot.docChanges().reduce(
               (acc: Acc, item) => {
@@ -267,15 +274,14 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
 
             if (eventsByType.modified.length > 0) {
               const modifiedEvents = eventsByType.modified.map((item) => item.doc.ref.id).join(',');
-              logger.error(
-                'order-relay',
+              this.error(
                 `Received modified order status event. Expect most recent status events to be immutable. Ids: ${modifiedEvents}`
               );
             }
 
             const jobData = eventsByType.added.map((item) => {
               const data = item.doc.data();
-              logger.log('order-relay', `Received order status event for order ${data.orderId}`);
+              this.log(`Received order status event for order ${data.orderId}`);
               return {
                 id: data.orderId,
                 orderData: {
@@ -308,7 +314,7 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
           }
         },
         (err) => {
-          logger.error('order-relay', `Order status event stream failed ${err.message}`);
+          this.error(`Order status event stream failed ${err.message}`);
           reject(err);
         }
       );
@@ -326,6 +332,7 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
 
     const orderStatusEventsQuery = orderStatusEvents
       .where('chainId', '==', config.env.chainId)
+      .where('collection', '==', this.collectionAddress)
       .where('isMostRecent', '==', true)
       .where('timestamp', '<=', syncUntil)
       .orderBy('timestamp', 'asc')
@@ -427,9 +434,9 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
         yield order;
       } catch (err) {
         if (err instanceof Error) {
-          logger.error(`order-relay`, `Error parsing order from snapshot: ${err.message}`);
+          this.error(`Error parsing order from snapshot: ${err.message}`);
         } else {
-          logger.error(`order-relay`, `Error parsing order from snapshot: ${err}`);
+          this.error(`Error parsing order from snapshot: ${err}`);
         }
       }
     }
@@ -448,6 +455,7 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
 
     const mostRecentSnapshotQuery = orderSnapshotsRef
       .where('chainId', '==', config.env.chainId)
+      .where('collection', '==', this.collectionAddress)
       .orderBy('timestamp', 'desc')
       .limit(1);
 

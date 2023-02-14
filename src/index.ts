@@ -19,6 +19,8 @@ async function main() {
     `Starting server with config: ${config.env.mode} Using forked network: ${network.isForkingEnabled}`
   );
 
+  const collection = '0xbc4ca0eda7647a8ab7c2061c2e118a18a936f13d';
+
   const orderbookStorage = new OrderbookV1.OrderbookStorage(redis, config.env.chainId);
   const complication = getOBComplicationAddress(config.env.chainId);
   const orderbook = new OrderbookV1.Orderbook(orderbookStorage, new Set([complication]));
@@ -62,7 +64,7 @@ async function main() {
     enableMetrics: false
   });
 
-  const orderRelay = new OrderRelay(matchingEngine, firestore, storage, redlock, orderbook, redis, {
+  const orderRelay = new OrderRelay(matchingEngine, firestore, storage, redlock, orderbook, redis, collection, {
     debug: config.env.debug,
     concurrency: 1,
     enableMetrics: false
