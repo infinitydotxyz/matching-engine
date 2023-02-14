@@ -3,8 +3,10 @@ import { BulkJobOptions, Job } from 'bullmq';
 import { BigNumber } from 'ethers/lib/ethers';
 import { formatEther, formatUnits } from 'ethers/lib/utils';
 import { Redis } from 'ioredis';
+import Redlock, { ExecutionError } from 'redlock';
 
 import { ChainId } from '@infinityxyz/lib/types/core';
+import { sleep } from '@infinityxyz/lib/utils';
 
 import { config } from '@/config';
 import { Match } from '@/lib/match-executor/match/types';
@@ -38,6 +40,7 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
     _db: Redis,
     _chainId: ChainId,
     protected _storage: OB.OrderbookStorage,
+    protected _redlock: Redlock,
     public readonly collectionAddress: string,
     options?: ProcessOptions | undefined
   ) {
@@ -118,6 +121,52 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
       id: orderId,
       matches
     };
+  }
+
+  public async run(): Promise<void> {
+    const matchingEngineLock = `matching-engine:chain:${config.env.chainId}:collection:${this.collectionAddress}:lock`;
+    const lockDuration = 15_000;
+    let failedAttempts = 0;
+
+    const close = async () => {
+      try {
+        await this._worker.close();
+      } catch (err) {
+        this.error(`Failed to close worker: ${JSON.stringify(err)}`);
+      }
+    };
+
+    while (failedAttempts < 5) {
+      try {
+        const lockPromise = this._redlock.using([matchingEngineLock], lockDuration, async (signal) => {
+          this.log(`Acquired lock`);
+          failedAttempts = 0;
+
+          const abortPromise = new Promise((resolve, reject) => {
+            signal.onabort = () => {
+              reject(new Error('Lock aborted'));
+            };
+          });
+
+          const runPromise = super._run();
+
+          await Promise.all([abortPromise, runPromise]);
+        });
+        await lockPromise;
+      } catch (err) {
+        await close();
+        failedAttempts += 1;
+        if (err instanceof ExecutionError) {
+          this.warn(`Failed to acquire lock, another instance is syncing. Attempt: ${failedAttempts}`);
+        } else {
+          this.error(`Unknown error occurred. Attempt: ${failedAttempts} ${JSON.stringify(err)}`);
+        }
+        await sleep(lockDuration / 3);
+      }
+    }
+
+    await close();
+    throw new Error('Failed to acquire lock after 5 attempts');
   }
 
   async add(job: MatchingEngineJob | MatchingEngineJob[]): Promise<void> {

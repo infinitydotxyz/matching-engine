@@ -1,7 +1,8 @@
 import { ChainId } from '@infinityxyz/lib/types/core';
 import { getOBComplicationAddress } from '@infinityxyz/lib/utils';
 
-import { redis } from '@/common/db';
+import { redis, redlock } from '@/common/db';
+import { config } from '@/config';
 import { OrderbookV1 } from '@/lib/orderbook';
 
 import { MatchingEngine } from '.';
@@ -16,7 +17,7 @@ describe('Matching Engine V1 - Match Token Listing', () => {
     const storage = new OrderbookV1.OrderbookStorage(redis, chainId);
     const complication = getOBComplicationAddress(chainId);
     orderbook = new OrderbookV1.Orderbook(storage, new Set(complication));
-    matchingEngine = new MatchingEngine(redis, ChainId.Mainnet, storage, collection);
+    matchingEngine = new MatchingEngine(redis, ChainId.Mainnet, storage, redlock, collection);
   });
 
   it('should work lol', async () => {

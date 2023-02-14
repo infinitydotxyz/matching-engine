@@ -128,6 +128,9 @@ export const config = {
     },
     executionEngine: {
       enabled: Number(getEnvVariable('EXECUTION_ENGINE', false)) === 1
+    },
+    api: {
+      port: Number(getEnvVariable('PORT', false)) || 9090
     }
   },
   broadcasting: {

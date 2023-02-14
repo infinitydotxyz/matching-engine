@@ -95,51 +95,58 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
   }
 
   public async run(sync = true) {
-    const orderSyncKey = `order-relay:chain:${config.env.chainId}:collection:${this.collectionAddress}:lock`;
+    const orderRelayLock = `order-relay:chain:${config.env.chainId}:collection:${this.collectionAddress}:lock`;
     const lockDuration = 15_000;
+    let failedAttempts = 0;
 
-    /**
-     * start processing jobs from the queue
-     */
-    const runPromise = super._run().catch((err: Error) => {
-      this.error(`Unexpected error: ${err.message}`);
-    });
+    const close = async () => {
+      try {
+        await this._worker.close();
+      } catch (err) {
+        this.error(`Failed to close worker: ${JSON.stringify(err)}`);
+      }
+    };
 
-    if (sync) {
-      for (;;) {
-        try {
-          const syncPromise = this._redlock
-            .using([orderSyncKey], lockDuration, async (signal) => {
-              /**
-               * sync and maintain the orderbook
-               */
-              await this._sync(signal);
-            })
-            .catch((err) => {
-              if (err instanceof ExecutionError) {
-                this.warn('Failed to acquire lock, another instance is syncing');
-              } else {
-                throw err;
-              }
-            });
-          /**
-           * wait for the lock to be released, or fail to acquire
-           */
-          await syncPromise;
-        } catch (err) {
-          this.error(`Unexpected error: ${err}`);
+    while (failedAttempts < 5) {
+      try {
+        const lockPromise = this._redlock.using([orderRelayLock], lockDuration, async (signal) => {
+          this.log(`Acquired lock`);
+          failedAttempts = 0;
+          const promises = [];
+          const runPromise = super._run();
+          promises.push(runPromise);
+          if (sync) {
+            /**
+             * sync and maintain the orderbook
+             */
+            const syncPromise = this._sync(signal);
+            promises.push(syncPromise);
+          }
+          const abortPromise = new Promise((resolve, reject) => {
+            signal.onabort = () => {
+              reject(new Error('Lock aborted'));
+            };
+          });
+          promises.push(abortPromise);
+
+          await Promise.all(promises);
+        });
+
+        await lockPromise;
+      } catch (err) {
+        await close();
+        failedAttempts += 1;
+        if (err instanceof ExecutionError) {
+          this.warn(`Failed to acquire lock, another instance is syncing. Attempt: ${failedAttempts}`);
+        } else {
+          this.error(`Unknown error occurred. Attempt: ${failedAttempts} ${JSON.stringify(err)}`);
         }
-        /**
-         * wait before trying to acquire the lock again
-         * - note this will cause all order relay instances
-         * with `sync=true` to attempt to repeatedly acquire the lock
-         */
         await sleep(lockDuration / 3);
       }
-    } else {
-      await runPromise;
-      return;
     }
+
+    await close();
+    throw new Error('Failed to acquire lock after 5 attempts');
   }
 
   async add(data: JobData | JobData[]): Promise<void> {
