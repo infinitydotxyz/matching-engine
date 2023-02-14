@@ -346,7 +346,7 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
     }
 
     if (!mainOrder) {
-      throw new Error('Main order not found');
+      return [] as Match[];
     }
 
     const mainOrderParams = Order.getOrderParams(mainOrder.id, config.env.chainId, mainOrder.order);

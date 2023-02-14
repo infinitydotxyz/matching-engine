@@ -13,4 +13,5 @@ export interface ProcessOptions {
   concurrency?: number;
   debug?: boolean;
   attempts?: number;
+  delay?: number;
 }

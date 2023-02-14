@@ -10,6 +10,7 @@
     "lint": "eslint . --ext .ts,.js",
     "format": "prettier -w ./src",
     "start": "node -r dotenv/config -r module-alias/register ./dist/index.js",
+    "start:forked": "npx cross-env ENABLE_FORKING=1 node -r dotenv/config -r module-alias/register ./dist/index.js",
     "start:dev": "npx cross-env ENABLE_FORKING=1 ts-node -r dotenv/config ./src/index.ts",
     "start:dev:fb": "ts-node -r dotenv/config ./src/index.ts",
     "start:prod": "npm run build && npm run start",

@@ -27,3 +27,15 @@ export const logger = {
   info: log('info'),
   warn: log('warn')
 };
+
+process.on('unhandledRejection', (error) => {
+  logger.error('process', `Unhandled rejection: ${error}`);
+});
+
+process.on('uncaughtException', (error) => {
+  logger.error('process', `Uncaught exception: ${error}`);
+});
+
+process.on('exit', (code) => {
+  logger.log('process', `Process exiting... Code: ${code}`);
+});
