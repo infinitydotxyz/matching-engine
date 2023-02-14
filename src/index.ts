@@ -58,7 +58,7 @@ async function main() {
     }
   );
 
-  const matchingEngine = new MatchingEngine(redis, config.env.chainId, orderbookStorage, {
+  const matchingEngine = new MatchingEngine(redis, config.env.chainId, orderbookStorage, collection, {
     debug: config.env.debug,
     concurrency: 1,
     enableMetrics: false

@@ -6,7 +6,6 @@ import { Redis } from 'ioredis';
 
 import { ChainId } from '@infinityxyz/lib/types/core';
 
-import { logger } from '@/common/logger';
 import { config } from '@/config';
 import { Match } from '@/lib/match-executor/match/types';
 import { OrderbookV1 as OB } from '@/lib/orderbook';
@@ -39,10 +38,11 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
     _db: Redis,
     _chainId: ChainId,
     protected _storage: OB.OrderbookStorage,
+    public readonly collectionAddress: string,
     options?: ProcessOptions | undefined
   ) {
     const version = 'v1';
-    super(_chainId, _db, `matching-engine:${version}`, options);
+    super(_chainId, _db, `matching-engine:${version}:collection:${collectionAddress}`, options);
     this.version = version;
   }
 
@@ -53,7 +53,7 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
     const validMatches = await this.processMatches(order, matches);
     const orderId = order.id;
 
-    logger.log('matching-engine', `found ${validMatches.length} valid matches for order ${order.id}`);
+    this.log(`found ${validMatches.length} valid matches for order ${order.id}`);
     if (validMatches.length > 0) {
       type DbMatch = {
         otherOrderIds: string[];
@@ -108,7 +108,7 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
       if (res) {
         for (const [err] of res) {
           if (err) {
-            logger.error('matching-engine', `failed to save matches for order ${order.id} ${err}`);
+            this.error(`failed to save matches for order ${order.id} ${err}`);
           }
         }
       }
@@ -369,7 +369,7 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
     const validMatches: Match[] = [];
     for (const { matchData, fullOrderData: matchOrderData } of matchesWithFullData) {
       if (!matchOrderData) {
-        logger.error('matching-engine', `order ${matchData.id} not found`);
+        this.error(`order ${matchData.id} not found`);
         continue;
       }
 
@@ -416,10 +416,7 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
           maxGasPriceGwei = Math.min(maxSourceGasPriceGwei, executionPrices.maxGasPriceGwei);
         }
 
-        logger.log(
-          'matching-engine',
-          `match found: ${offer.id} -> ${listing.id} (maxGasPriceGwei: ${maxGasPriceGwei})`
-        );
+        this.log(`match found: ${offer.id} -> ${listing.id} (maxGasPriceGwei: ${maxGasPriceGwei})`);
 
         validMatches.push({
           matchId: `${offer.id}:${listing.id}`,
@@ -431,9 +428,9 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
         });
       } catch (err) {
         if (err instanceof Error) {
-          logger.error('matching-engine', `order ${matchData.id} has error. ${err.message}`);
+          this.error(`order ${matchData.id} has error. ${err.message}`);
         } else {
-          logger.error('matching-engine', `order ${matchData.id} has error. ${err}`);
+          this.error(`order ${matchData.id} has error. ${err}`);
         }
       }
     }
