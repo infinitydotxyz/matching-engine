@@ -1,3 +1,5 @@
+import { getOBComplicationAddress } from '@infinityxyz/lib/utils';
+
 import { config, getNetworkConfig } from '@/config';
 
 import { firestore, redis, redlock, storage } from './common/db';
@@ -9,10 +11,6 @@ import { MatchingEngine } from './lib/matching-engine/v1';
 import { OrderRelay } from './lib/order-relay/v1/order-relay';
 import { OrderbookV1 } from './lib/orderbook';
 
-process.on('unhandledRejection', (error) => {
-  logger.error('process', `Unhandled rejection: ${error}`);
-});
-
 async function main() {
   const network = await getNetworkConfig(config.env.chainId);
 
@@ -22,7 +20,8 @@ async function main() {
   );
 
   const orderbookStorage = new OrderbookV1.OrderbookStorage(redis, config.env.chainId);
-  const orderbook = new OrderbookV1.Orderbook(orderbookStorage);
+  const complication = getOBComplicationAddress(config.env.chainId);
+  const orderbook = new OrderbookV1.Orderbook(orderbookStorage, new Set([complication]));
 
   const nonceProvider = new NonceProvider(
     config.env.chainId,
@@ -69,18 +68,27 @@ async function main() {
     enableMetrics: false
   });
 
-  const nonceProviderPromise = nonceProvider.run();
+  const promises = [];
+  if (config.components.orderRelay.enabled) {
+    logger.info('process', 'Starting order relay');
+    const orderRelayPromise = orderRelay.run(config.components.orderRelay.enableSyncing);
+    promises.push(orderRelayPromise);
+  }
 
-  logger.info('process', 'Starting matching engine');
-  const matchingEnginePromise = matchingEngine.run();
+  if (config.components.matchingEngine.enabled) {
+    logger.info('process', 'Starting matching engine');
+    const matchingEnginePromise = matchingEngine.run();
+    promises.push(matchingEnginePromise);
+  }
 
-  logger.info('process', 'Starting order relay');
-  const orderRelayPromise = orderRelay.run(config.orderRelay.enableSyncing);
+  if (config.components.executionEngine.enabled) {
+    logger.info('process', 'Starting execution engine');
+    const nonceProviderPromise = nonceProvider.run();
+    const executionEnginePromise = executionEngine.run();
+    promises.push(nonceProviderPromise, executionEnginePromise);
+  }
 
-  logger.info('process', 'Starting execution engine');
-  const executionEnginePromise = executionEngine.run();
-
-  await Promise.all([nonceProviderPromise, matchingEnginePromise, orderRelayPromise, executionEnginePromise]);
+  await Promise.all(promises);
 }
 
 void main();

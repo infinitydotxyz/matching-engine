@@ -7,6 +7,17 @@ import { OrderData } from './types';
 
 export class Orderbook extends AbstractOrderbook<Order, OrderData> {
   isOrderValid(order: Order): OrderValidationResponse {
+    const orderComplication = order.params.complication;
+    if (!this._supportedComplications.has(orderComplication)) {
+      return {
+        isValid: false,
+        error: new OrderbookOrderError(
+          order.id,
+          ErrorCode.InvalidComplication,
+          `Invalid Complication. ${orderComplication}`
+        )
+      };
+    }
     try {
       order.validate();
       return { isValid: true };

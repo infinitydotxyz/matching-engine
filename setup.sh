@@ -15,7 +15,7 @@ export ACCOUNT_8=0xdbda1821b80551c9d65939329250298aa3472ba22feea921c0cf5d620ea67
 export ACCOUNT_9=0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6
 
 # Contracts
-EXCHANGE="0xbADa5551B2f08d3959329B2fF8D0A7CC8BE26324"
+EXCHANGE="0xf1000142679a6a57abd2859d18f8002216b0ac2b"
 WETH="0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
 SEAPORT="0x00000000006c3852cbEf3e08E8dF289169EdE581"
 
@@ -26,6 +26,7 @@ cast rpc anvil_impersonateAccount $EXCHANGE_OWNER > /dev/null
 
 export TEST=$ACCOUNT_8
 export INITIATOR=$ACCOUNT_9;
+INITIATOR_ADDR=`cast wallet address $INITIATOR`
 export ERC721_OWNER=$ACCOUNT_5;
 
 echo "Depositing WETH to test account"
@@ -33,7 +34,7 @@ cast send $WETH "deposit()" --value 1ether --private-key $TEST > /dev/null
 
 echo "Deploying match executor..."
 _MATCH_EXEC_OUTPUT="_match_executor_deploy.txt"
-forge create --constructor-args "$EXCHANGE" --private-key $INITIATOR contracts/core/MatchExecutor.sol:MatchExecutor > $_MATCH_EXEC_OUTPUT
+forge create --constructor-args "$EXCHANGE" "$INITIATOR_ADDR" --private-key $INITIATOR contracts/core/FlowMatchExecutor.sol:FlowMatchExecutor > $_MATCH_EXEC_OUTPUT
 MATCH_EXECUTOR=`grep "Deployed to:" $_MATCH_EXEC_OUTPUT | cut -d ':' -f 2`
 echo "Match executor deployed to $MATCH_EXECUTOR"
 rm $_MATCH_EXEC_OUTPUT

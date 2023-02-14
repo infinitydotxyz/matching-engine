@@ -2,7 +2,8 @@ export enum ErrorCode {
   InvalidOrder = 1,
   IncompatibleOrder = 2,
   InvalidStatus = 3,
-  OrderDoesNotExist = 4
+  OrderDoesNotExist = 4,
+  InvalidComplication = 5
 }
 
 export class OrderbookError extends Error {

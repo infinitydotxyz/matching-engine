@@ -13,7 +13,8 @@ export enum ErrorCode {
   Signer = 12,
   NumCollections = 13,
 
-  InfinityComplication = 50, // todo: joe change this to FlowComplication
+  InfinityComplication = 50,
+  FlowComplication = 51,
 
   SeaportOrderType = 100,
   SeaportConduitKey = 101,

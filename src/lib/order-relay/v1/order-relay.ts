@@ -2,9 +2,10 @@ import { BulkJobOptions, Job } from 'bullmq';
 import { Storage } from 'firebase-admin/lib/storage/storage';
 import { Redis } from 'ioredis';
 import * as ReadLine from 'readline';
-import Redlock, { ExecutionError, RedlockAbortSignal } from 'redlock';
+import Redlock, { ExecutionError, RedlockAbortSignal, ResourceLockedError } from 'redlock';
 
 import { ChainId, OrderStatusEvent } from '@infinityxyz/lib/types/core';
+import { sleep } from '@infinityxyz/lib/utils';
 
 import { logger } from '@/common/logger';
 import { config } from '@/config';
@@ -72,6 +73,7 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
       }
       successful = true;
     } catch (err) {
+      logger.error('order-relay', `Failed to process order ${job.data.id}: ${(err as Error).message}`);
       successful = false;
     }
 
@@ -98,23 +100,36 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
     });
 
     if (sync) {
-      const syncPromise = this._redlock
-        .using([orderSyncKey], lockDuration, async (signal) => {
+      for (;;) {
+        try {
+          const syncPromise = this._redlock
+            .using([orderSyncKey], lockDuration, async (signal) => {
+              /**
+               * sync and maintain the orderbook
+               */
+              await this._sync(signal);
+            })
+            .catch((err) => {
+              if (err instanceof ExecutionError) {
+                logger.warn('order-relay', 'Failed to acquire lock, another instance is syncing');
+              } else {
+                throw err;
+              }
+            });
           /**
-           * sync and maintain the orderbook
+           * wait for the lock to be released, or fail to acquire
            */
-          await this._sync(signal);
-        })
-        .catch((err) => {
-          if (err instanceof ExecutionError) {
-            logger.warn('order-relay', 'Failed to acquire lock, another instance is syncing');
-          } else {
-            throw err;
-          }
-        });
-
-      await Promise.all([runPromise, syncPromise]);
-      return;
+          await syncPromise;
+        } catch (err) {
+          logger.error('order-relay', `Order relay - Unexpected error: ${err}`);
+        }
+        /**
+         * wait before trying to acquire the lock again
+         * - note this will cause all order relay instances
+         * with `sync=true` to attempt to repeatedly acquire the lock
+         */
+        await sleep(lockDuration / 3);
+      }
     } else {
       await runPromise;
       return;
@@ -168,7 +183,7 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
      */
     const startTimestamp = syncCursor.timestamp;
     const endTimestamp = Date.now();
-    const iterator = this._syncEvents(signal, syncCursor);
+    const iterator = this._syncEvents(syncCursor);
     this.emit('orderbookSyncing');
     for await (const { syncCursor, numEvents, complete } of iterator) {
       this._checkSignal(signal);
@@ -224,69 +239,75 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
     const syncCursor = initialSyncCursor;
 
     return new Promise((reject) => {
-      orderStatusEventsQuery.onSnapshot(
+      const cancel = orderStatusEventsQuery.onSnapshot(
         async (snapshot) => {
-          this._checkSignal(signal);
-          logger.log('order-relay', `Received ${snapshot.docChanges().length} order status events`);
-
-          const eventsByType = snapshot.docChanges().reduce(
-            (acc: Acc, item) => {
-              switch (item.type) {
-                case 'added': {
-                  acc.added.push(item);
-                  break;
-                }
-                case 'removed': {
-                  acc.removed.push(item);
-                  break;
-                }
-                case 'modified': {
-                  acc.modified.push(item);
-                }
-              }
-              return acc;
-            },
-            { added: [], modified: [], removed: [] } as Acc
-          );
-
-          if (eventsByType.modified.length > 0) {
-            const modifiedEvents = eventsByType.modified.map((item) => item.doc.ref.id).join(',');
-            logger.error(
-              'order-relay',
-              `Received modified order status event. Expect most recent status events to be immutable. Ids: ${modifiedEvents}`
-            );
-          }
-
-          const jobData = eventsByType.added.map((item) => {
-            const data = item.doc.data();
-            logger.log('order-relay', `Received order status event for order ${data.orderId}`);
-            return {
-              id: data.orderId,
-              orderData: {
-                id: data.orderId,
-                order: data.order,
-                status: data.status,
-                source: data.source,
-                sourceOrder: data.sourceOrder,
-                gasUsage: data.gasUsage
-              }
-            };
-          });
-
-          await this.add(jobData);
-
-          const lastEvent = snapshot.docs[snapshot.docs.length - 1]?.data?.();
-
-          if (lastEvent) {
+          try {
             this._checkSignal(signal);
-            syncCursor.timestamp = lastEvent.timestamp;
-            syncCursor.eventId = lastEvent.id;
-            syncCursor.orderId = lastEvent.orderId;
-            await saveCursor(syncCursor);
+            logger.log('order-relay', `Received ${snapshot.docChanges().length} order status events`);
+
+            const eventsByType = snapshot.docChanges().reduce(
+              (acc: Acc, item) => {
+                switch (item.type) {
+                  case 'added': {
+                    acc.added.push(item);
+                    break;
+                  }
+                  case 'removed': {
+                    acc.removed.push(item);
+                    break;
+                  }
+                  case 'modified': {
+                    acc.modified.push(item);
+                  }
+                }
+                return acc;
+              },
+              { added: [], modified: [], removed: [] } as Acc
+            );
+
+            if (eventsByType.modified.length > 0) {
+              const modifiedEvents = eventsByType.modified.map((item) => item.doc.ref.id).join(',');
+              logger.error(
+                'order-relay',
+                `Received modified order status event. Expect most recent status events to be immutable. Ids: ${modifiedEvents}`
+              );
+            }
+
+            const jobData = eventsByType.added.map((item) => {
+              const data = item.doc.data();
+              logger.log('order-relay', `Received order status event for order ${data.orderId}`);
+              return {
+                id: data.orderId,
+                orderData: {
+                  id: data.orderId,
+                  order: data.order,
+                  status: data.status,
+                  source: data.source,
+                  sourceOrder: data.sourceOrder,
+                  gasUsage: data.gasUsage
+                }
+              };
+            });
+
+            await this.add(jobData);
+
+            const lastEvent = snapshot.docs[snapshot.docs.length - 1]?.data?.();
+
+            if (lastEvent) {
+              this._checkSignal(signal);
+              syncCursor.timestamp = lastEvent.timestamp;
+              syncCursor.eventId = lastEvent.id;
+              syncCursor.orderId = lastEvent.orderId;
+              await saveCursor(syncCursor);
+            }
+          } catch (err) {
+            if (err instanceof ResourceLockedError || err instanceof ExecutionError) {
+              cancel();
+              return;
+            }
           }
         },
         (err) => {
-          // TODO handle this more robustly
           logger.error('order-relay', `Order status event stream failed ${err.message}`);
           reject(err);
         }
@@ -298,11 +319,7 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
    * eventOnlySync will process all order status events
    * since the last order status event snapshot processed
    */
-  protected async *_syncEvents(
-    signal: RedlockAbortSignal,
-    syncCursor: OrderStatusEventSyncCursor,
-    syncUntil: number = Date.now()
-  ) {
+  protected async *_syncEvents(syncCursor: OrderStatusEventSyncCursor, syncUntil: number = Date.now()) {
     const orderStatusEvents = this._firestore.collectionGroup(
       'orderStatusChanges'
     ) as FirebaseFirestore.CollectionGroup<OrderStatusEvent>;
@@ -333,7 +350,6 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
 
     let numEvents = 0;
     for await (const { data } of stream) {
-      this._checkSignal(signal);
       await this.add({
         id: data.orderId,
         orderData: {
@@ -367,7 +383,6 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
     let numOrders = 0;
     for await (const item of orderIterator) {
       // the snapshot is assumed to contain only active orders
-      // await this.add({ id: item. ...item, status: 'active' });
       await this.add({
         id: item.id,
         orderData: {

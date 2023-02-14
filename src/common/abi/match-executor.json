@@ -2,13 +2,62 @@
   {
     "inputs": [
       {
-        "internalType": "contract IInfinityExchange",
+        "internalType": "contract IFlowExchange",
         "name": "_exchange",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "_initiator",
         "type": "address"
       }
     ],
     "stateMutability": "nonpayable",
     "type": "constructor"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "destination",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "currency",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "ERC20Withdrawn",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "destination",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "ETHWithdrawn",
+    "type": "event"
   },
   {
     "anonymous": false,
@@ -34,6 +83,25 @@
       }
     ],
     "name": "EnabledExchangeRemoved",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "oldVal",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "newVal",
+        "type": "address"
+      }
+    ],
+    "name": "InitiatorChanged",
     "type": "event"
   },
   {
@@ -99,7 +167,7 @@
     "name": "exchange",
     "outputs": [
       {
-        "internalType": "contract IInfinityExchange",
+        "internalType": "contract IFlowExchange",
         "name": "",
         "type": "address"
       }
@@ -136,7 +204,7 @@
                     "type": "bool"
                   }
                 ],
-                "internalType": "struct MatchExecutorTypes.Call[]",
+                "internalType": "struct FlowMatchExecutorTypes.Call[]",
                 "name": "calls",
                 "type": "tuple[]"
               },
@@ -170,7 +238,7 @@
                 "type": "tuple[]"
               }
             ],
-            "internalType": "struct MatchExecutorTypes.ExternalFulfillments",
+            "internalType": "struct FlowMatchExecutorTypes.ExternalFulfillments",
             "name": "externalFulfillments",
             "type": "tuple"
           },
@@ -338,17 +406,17 @@
                 "type": "tuple[][]"
               },
               {
-                "internalType": "enum MatchExecutorTypes.MatchOrdersType",
+                "internalType": "enum FlowMatchExecutorTypes.MatchOrdersType",
                 "name": "matchType",
                 "type": "uint8"
               }
             ],
-            "internalType": "struct MatchExecutorTypes.MatchOrders[]",
+            "internalType": "struct FlowMatchExecutorTypes.MatchOrders[]",
             "name": "matches",
             "type": "tuple[]"
           }
         ],
-        "internalType": "struct MatchExecutorTypes.Batch[]",
+        "internalType": "struct FlowMatchExecutorTypes.Batch[]",
         "name": "batches",
         "type": "tuple[]"
       }
@@ -524,12 +592,12 @@
             "type": "tuple[][]"
           },
           {
-            "internalType": "enum MatchExecutorTypes.MatchOrdersType",
+            "internalType": "enum FlowMatchExecutorTypes.MatchOrdersType",
             "name": "matchType",
             "type": "uint8"
           }
         ],
-        "internalType": "struct MatchExecutorTypes.MatchOrders[]",
+        "internalType": "struct FlowMatchExecutorTypes.MatchOrders[]",
         "name": "matches",
         "type": "tuple[]"
       }
@@ -537,6 +605,57 @@
     "name": "executeNativeMatches",
     "outputs": [],
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      }
+    ],
+    "name": "getEnabledExchangeAt",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "initiator",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_exchange",
+        "type": "address"
+      }
+    ],
+    "name": "isExchangeEnabled",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -558,6 +677,19 @@
         "internalType": "bytes4",
         "name": "",
         "type": "bytes4"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "numEnabledExchanges",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
       }
     ],
     "stateMutability": "view",
@@ -666,6 +798,55 @@
   {
     "inputs": [],
     "name": "unpause",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_initiator",
+        "type": "address"
+      }
+    ],
+    "name": "updateInitiator",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "destination",
+        "type": "address"
+      }
+    ],
+    "name": "withdrawETH",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "destination",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "currency",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "withdrawTokens",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"

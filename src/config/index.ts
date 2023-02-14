@@ -118,8 +118,17 @@ export const config = {
     debug: Number(getEnvVariable('DEBUG', false)) === 1,
     isForkingEnabled
   },
-  orderRelay: {
-    enableSyncing: true
+  components: {
+    orderRelay: {
+      enableSyncing: true,
+      enabled: Number(getEnvVariable('ORDER_RELAY', false)) === 1
+    },
+    matchingEngine: {
+      enabled: Number(getEnvVariable('MATCHING_ENGINE', false)) === 1
+    },
+    executionEngine: {
+      enabled: Number(getEnvVariable('EXECUTION_ENGINE', false)) === 1
+    }
   },
   broadcasting: {
     blockOffset: 2

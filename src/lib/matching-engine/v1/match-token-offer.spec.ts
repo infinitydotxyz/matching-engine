@@ -1,4 +1,5 @@
 import { ChainId } from '@infinityxyz/lib/types/core';
+import { getOBComplicationAddress } from '@infinityxyz/lib/utils';
 
 import { redis } from '@/common/db';
 import { OrderbookV1 } from '@/lib/orderbook';
@@ -12,8 +13,8 @@ describe('Matching Engine V1 - Match Token Offer', () => {
   let orderbook: OrderbookV1.Orderbook;
   beforeAll(() => {
     const storage = new OrderbookV1.OrderbookStorage(redis, chainId);
-
-    orderbook = new OrderbookV1.Orderbook(storage);
+    const complication = getOBComplicationAddress(chainId);
+    orderbook = new OrderbookV1.Orderbook(storage, new Set(complication));
     matchingEngine = new MatchingEngine(redis, ChainId.Mainnet, storage);
   });
 
