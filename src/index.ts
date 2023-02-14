@@ -11,10 +11,6 @@ import { MatchingEngine } from './lib/matching-engine/v1';
 import { OrderRelay } from './lib/order-relay/v1/order-relay';
 import { OrderbookV1 } from './lib/orderbook';
 
-process.on('unhandledRejection', (error) => {
-  logger.error('process', `Unhandled rejection: ${error}`);
-});
-
 async function main() {
   const network = await getNetworkConfig(config.env.chainId);
 
@@ -72,18 +68,27 @@ async function main() {
     enableMetrics: false
   });
 
-  const nonceProviderPromise = nonceProvider.run();
+  const promises = [];
+  if (config.components.orderRelay.enabled) {
+    logger.info('process', 'Starting order relay');
+    const orderRelayPromise = orderRelay.run(config.components.orderRelay.enableSyncing);
+    promises.push(orderRelayPromise);
+  }
 
-  logger.info('process', 'Starting matching engine');
-  const matchingEnginePromise = matchingEngine.run();
+  if (config.components.matchingEngine.enabled) {
+    logger.info('process', 'Starting matching engine');
+    const matchingEnginePromise = matchingEngine.run();
+    promises.push(matchingEnginePromise);
+  }
 
-  logger.info('process', 'Starting order relay');
-  const orderRelayPromise = orderRelay.run(config.orderRelay.enableSyncing);
+  if (config.components.executionEngine.enabled) {
+    logger.info('process', 'Starting execution engine');
+    const nonceProviderPromise = nonceProvider.run();
+    const executionEnginePromise = executionEngine.run();
+    promises.push(nonceProviderPromise, executionEnginePromise);
+  }
 
-  logger.info('process', 'Starting execution engine');
-  const executionEnginePromise = executionEngine.run();
-
-  await Promise.all([nonceProviderPromise, matchingEnginePromise, orderRelayPromise, executionEnginePromise]);
+  await Promise.all(promises);
 }
 
 void main();
