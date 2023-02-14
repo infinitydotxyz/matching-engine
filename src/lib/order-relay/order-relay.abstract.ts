@@ -94,5 +94,6 @@ export abstract class AbstractOrderRelay<T, U, JobData extends { id: string }, J
     }
 
     this._registerWorkerListeners(verbose);
+    this._registerProcessListeners();
   }
 }

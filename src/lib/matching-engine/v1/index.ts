@@ -123,7 +123,7 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
     };
   }
 
-  public async run(): Promise<void> {
+  public async run() {
     const matchingEngineLock = `matching-engine:chain:${config.env.chainId}:collection:${this.collectionAddress}:lock`;
     const lockDuration = 15_000;
     let failedAttempts = 0;
@@ -149,7 +149,6 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
           });
 
           const runPromise = super._run();
-
           await Promise.all([abortPromise, runPromise]);
         });
         await lockPromise;

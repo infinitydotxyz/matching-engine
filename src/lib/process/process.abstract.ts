@@ -60,7 +60,7 @@ export abstract class AbstractProcess<T extends { id: string }, U> extends Event
   abstract processJob(job: Job<T, U>): Promise<U>;
   abstract add(jobs: T | T[]): Promise<void>;
 
-  public async run() {
+  public async run(): Promise<void> {
     await this._run();
   }
 
@@ -70,6 +70,10 @@ export abstract class AbstractProcess<T extends { id: string }, U> extends Event
 
   public async pause() {
     await this._pause();
+  }
+
+  public async close() {
+    await this._close();
   }
 
   protected async _run() {
@@ -90,6 +94,14 @@ export abstract class AbstractProcess<T extends { id: string }, U> extends Event
     }
   }
 
+  protected async _close() {
+    if (this._worker.isPaused() || this._worker.isRunning()) {
+      const queuePromise = this._queue.close();
+      const workerPromise = this._worker.close();
+      return await Promise.all([queuePromise, workerPromise]);
+    }
+  }
+
   protected async _processJob(job: Job<T, WithTiming<U>>): Promise<WithTiming<U>> {
     const start = Date.now();
     const result = await this.processJob(job);
@@ -107,6 +119,19 @@ export abstract class AbstractProcess<T extends { id: string }, U> extends Event
 
   protected _registerListeners(verbose = false): void {
     this._registerWorkerListeners(verbose);
+    this._registerProcessListeners();
+  }
+
+  protected _registerProcessListeners() {
+    process.setMaxListeners(process.listenerCount('SIGINT') + 1);
+    process.once('SIGINT', async () => {
+      try {
+        await this.close();
+        this.log(`Gracefully closed`);
+      } catch (err) {
+        this.error(`Error closing process: ${JSON.stringify(err)}`);
+      }
+    });
   }
 
   protected _registerWorkerListeners(verbose = false) {

@@ -1,9 +1,8 @@
-import { exec } from 'child_process';
 import Fastify from 'fastify';
 
 import { config } from '@/config';
 
-import executionEngine from './endpoints/execution-engine';
+import executionEngine from './endpoints/collection';
 
 const fastify = Fastify({
   jsonShorthand: false,
