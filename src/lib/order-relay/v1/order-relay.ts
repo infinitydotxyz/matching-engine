@@ -388,24 +388,29 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
   protected async _loadSnapshot(signal: RedlockAbortSignal): Promise<{ syncCursor: OrderStatusEventSyncCursor }> {
     const startTime = Date.now();
 
-    const { bucket, file, timestamp } = await this._getSnapshotMetadata();
+    const result = await this._getSnapshotMetadata();
 
     this._checkSignal(signal);
-    const orderIterator = this._getSnapshot({ bucket, file });
-    this.emit('snapshotLoading');
-
     let numOrders = 0;
-    for await (const item of orderIterator) {
-      // the snapshot is assumed to contain only active orders
-      await this.add({
-        id: item.id,
-        orderData: {
-          ...item,
-          status: 'active'
-        }
-      });
-      numOrders += 1;
-      this._checkSignal(signal);
+    let timestamp = 0;
+    if (result) {
+      const { bucket, file, timestamp: snapshotTimestamp } = result;
+      timestamp = snapshotTimestamp;
+      const orderIterator = this._getSnapshot({ bucket, file });
+      this.emit('snapshotLoading');
+
+      for await (const item of orderIterator) {
+        // the snapshot is assumed to contain only active orders
+        await this.add({
+          id: item.id,
+          orderData: {
+            ...item,
+            status: 'active'
+          }
+        });
+        numOrders += 1;
+        this._checkSignal(signal);
+      }
     }
     const endLoadTime = Date.now();
     this.emit('snapshotLoaded', {
@@ -455,7 +460,7 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
     }
   }
 
-  protected async _getSnapshotMetadata(): Promise<SnapshotMetadata> {
+  protected async _getSnapshotMetadata(): Promise<SnapshotMetadata | null> {
     const orderSnapshotsRef = this._firestore.collection(
       'orderSnapshots'
     ) as FirebaseFirestore.CollectionReference<SnapshotMetadata>;
@@ -471,7 +476,8 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
     const snapshotMetadata = snap.docs[0]?.data?.();
 
     if (!snapshotMetadata) {
-      throw new Error('No snapshot metadata found');
+      this.warn('No snapshot found');
+      return null;
     }
 
     return snapshotMetadata;
