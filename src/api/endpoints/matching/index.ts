@@ -48,7 +48,7 @@ export default async function register(fastify: FastifyInstance, options: Fastif
     await processes.orderRelay.close();
 
     return {
-      isSynced: orderRelayJobCounts.waiting < 100,
+      isSynced: orderRelayJobCounts.waiting < 500,
       matchingEngine: {
         healthStatus: matchingEngineHealth,
         jobsProcessing: matchingEngineJobsProcessing,

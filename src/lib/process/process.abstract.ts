@@ -2,6 +2,8 @@ import { BulkJobOptions, Job, MetricsTime, Queue, QueueEvents, Worker } from 'bu
 import EventEmitter from 'events';
 import Redis from 'ioredis';
 
+import { sleep } from '@infinityxyz/lib/utils';
+
 import { logger } from '@/common/logger';
 
 import { JobDataType, ProcessJobResult, ProcessOptions, WithTiming } from './types';
@@ -189,14 +191,19 @@ export abstract class AbstractProcess<T extends { id: string }, U> extends Event
       connection: this._db.duplicate(),
       autorun: true
     });
-    await queueEvents.waitUntilReady();
-    const job = await this._queue.add('health-check', {
-      id: 'health-check',
-      _processMetadata: {
-        type: 'health-check'
-      }
-    });
+
     try {
+      await queueEvents.waitUntilReady();
+      const job = await this._queue.add(
+        'health-check',
+        {
+          id: 'health-check',
+          _processMetadata: {
+            type: 'health-check'
+          }
+        },
+        { priority: 10 }
+      );
       await job.waitUntilFinished(queueEvents, 10_000);
       await queueEvents.close();
       return {
