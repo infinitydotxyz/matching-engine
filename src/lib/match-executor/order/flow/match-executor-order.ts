@@ -102,8 +102,8 @@ export class MatchExecutorOrder extends Order {
     unsignedOrder.nonce = nonce.toString();
     unsignedOrder.maxGasPrice = '0';
 
-    const { types, value, domain } = unsignedOrder.getSignatureData();
-    const signature = splitSignature(await this._matchExecutorOwner._signTypedData(domain, types, value));
+    const { type, value, domain } = unsignedOrder.getSignatureData();
+    const signature = splitSignature(await this._matchExecutorOwner._signTypedData(domain, type, value));
 
     const encodedSig = defaultAbiCoder.encode(['bytes32', 'bytes32', 'uint8'], [signature.r, signature.s, signature.v]);
 

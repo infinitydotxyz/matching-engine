@@ -2,7 +2,6 @@ import { ChainId } from '@infinityxyz/lib/types/core';
 import { getOBComplicationAddress } from '@infinityxyz/lib/utils';
 
 import { redis, redlock } from '@/common/db';
-import { config } from '@/config';
 import { OrderbookV1 } from '@/lib/orderbook';
 
 import { MatchingEngine } from '.';
