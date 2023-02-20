@@ -120,11 +120,8 @@ export const config = {
     isForkingEnabled
   },
   components: {
-    orderRelay: {
-      enableSyncing: true,
-      enabled: Number(getEnvVariable('ORDER_RELAY', false)) === 1
-    },
     matchingEngine: {
+      enableSyncing: true,
       enabled: Number(getEnvVariable('MATCHING_ENGINE', false)) === 1
     },
     executionEngine: {

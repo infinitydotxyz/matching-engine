@@ -1,17 +1,23 @@
-import { Job, MetricsTime, Queue, Worker } from 'bullmq';
+import { BulkJobOptions, Job, MetricsTime, Queue, QueueEvents, Worker } from 'bullmq';
 import EventEmitter from 'events';
 import Redis from 'ioredis';
 
 import { logger } from '@/common/logger';
 
-import { ProcessOptions, WithTiming } from './types';
+import { JobDataType, ProcessJobResult, ProcessOptions, WithTiming } from './types';
 
 export abstract class AbstractProcess<T extends { id: string }, U> extends EventEmitter {
-  protected _worker: Worker<T, WithTiming<U>>;
-  protected _queue: Queue<T, WithTiming<U>>;
+  protected _worker: Worker<JobDataType<T>, WithTiming<U> | WithTiming<ProcessJobResult>>;
+  protected _queue: Queue<JobDataType<T>, WithTiming<U> | WithTiming<ProcessJobResult>>;
+
+  protected _cancelProcessListeners?: () => void;
 
   public get queue() {
     return this._queue;
+  }
+
+  public get worker() {
+    return this._worker;
   }
 
   log(message: string) {
@@ -47,18 +53,41 @@ export abstract class AbstractProcess<T extends { id: string }, U> extends Event
       }
     });
 
-    this._worker = new Worker<T, WithTiming<U>>(this.queueName, this._processJob.bind(this), {
-      connection: this._db.duplicate(),
-      concurrency: options?.concurrency ?? 1,
-      autorun: false,
-      metrics: metrics || undefined
-    });
+    this._worker = new Worker<JobDataType<T>, WithTiming<U> | WithTiming<ProcessJobResult>>(
+      this.queueName,
+      this._processJob.bind(this),
+      {
+        connection: this._db.duplicate(),
+        concurrency: options?.concurrency ?? 1,
+        autorun: false,
+        metrics: metrics || undefined
+      }
+    );
 
     this._registerListeners(options?.debug);
   }
 
   abstract processJob(job: Job<T, U>): Promise<U>;
-  abstract add(jobs: T | T[]): Promise<void>;
+
+  async add(job: T | T[]): Promise<void> {
+    const arr = Array.isArray(job) ? job : [job];
+    const jobs: {
+      name: string;
+      data: JobDataType<T>;
+      opts?: BulkJobOptions | undefined;
+    }[] = arr.map((item) => {
+      return {
+        name: `${item.id}`,
+        data: {
+          _processMetadata: {
+            type: 'default'
+          },
+          ...item
+        }
+      };
+    });
+    await this._queue.addBulk(jobs);
+  }
 
   public async run(): Promise<void> {
     await this._run();
@@ -95,18 +124,30 @@ export abstract class AbstractProcess<T extends { id: string }, U> extends Event
   }
 
   protected async _close() {
-    if (this._worker.isPaused() || this._worker.isRunning()) {
-      const queuePromise = this._queue.close();
-      const workerPromise = this._worker.close();
-      return await Promise.all([queuePromise, workerPromise]);
-    }
+    const queuePromise = this._queue.close();
+    const workerPromise = this._worker.close();
+    await Promise.all([queuePromise, workerPromise]);
+    this._cancelProcessListeners?.();
   }
 
-  protected async _processJob(job: Job<T, WithTiming<U>>): Promise<WithTiming<U>> {
+  protected async _processJob(
+    job: Job<JobDataType<T>, WithTiming<U> | WithTiming<ProcessJobResult>>
+  ): Promise<WithTiming<U> | WithTiming<ProcessJobResult>> {
     const start = Date.now();
-    const result = await this.processJob(job);
-    const end = Date.now();
 
+    if ('_processMetadata' in job.data && job.data._processMetadata.type === 'health-check') {
+      const end = Date.now();
+      return {
+        timing: {
+          created: job.timestamp,
+          started: start,
+          completed: end
+        }
+      };
+    }
+
+    const result = await this.processJob(job as Job<T, U>);
+    const end = Date.now();
     return {
       ...result,
       timing: {
@@ -119,19 +160,55 @@ export abstract class AbstractProcess<T extends { id: string }, U> extends Event
 
   protected _registerListeners(verbose = false): void {
     this._registerWorkerListeners(verbose);
-    this._registerProcessListeners();
+    this._cancelProcessListeners = this._registerProcessListeners();
   }
 
   protected _registerProcessListeners() {
     process.setMaxListeners(process.listenerCount('SIGINT') + 1);
-    process.once('SIGINT', async () => {
+
+    const handler = async () => {
       try {
+        this._cancelProcessListeners = undefined;
         await this.close();
         this.log(`Gracefully closed`);
       } catch (err) {
         this.error(`Error closing process: ${JSON.stringify(err)}`);
       }
+    };
+
+    process.once('SIGINT', handler);
+    const cancel = () => {
+      process.removeListener('SIGINT', handler);
+      process.setMaxListeners(process.listenerCount('SIGINT') - 1);
+    };
+    return cancel;
+  }
+
+  public async checkHealth() {
+    const queueEvents = new QueueEvents(this.queueName, {
+      connection: this._db.duplicate(),
+      autorun: true
     });
+    await queueEvents.waitUntilReady();
+    const job = await this._queue.add('health-check', {
+      id: 'health-check',
+      _processMetadata: {
+        type: 'health-check'
+      }
+    });
+    try {
+      await job.waitUntilFinished(queueEvents, 10_000);
+      await queueEvents.close();
+      return {
+        status: 'healthy'
+      };
+    } catch (err) {
+      await queueEvents.close();
+      return {
+        status: 'unhealthy',
+        err
+      };
+    }
   }
 
   protected _registerWorkerListeners(verbose = false) {

@@ -1,4 +1,4 @@
-import { BulkJobOptions, Job } from 'bullmq';
+import { Job } from 'bullmq';
 import { ethers } from 'ethers';
 import { Storage } from 'firebase-admin/lib/storage/storage';
 import { Redis } from 'ioredis';
@@ -94,18 +94,10 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
     };
   }
 
-  public async run(sync = true) {
+  public async run() {
     const orderRelayLock = `order-relay:chain:${config.env.chainId}:collection:${this.collectionAddress}:lock`;
     const lockDuration = 15_000;
     let failedAttempts = 0;
-
-    const close = async () => {
-      try {
-        await this._worker.close();
-      } catch (err) {
-        this.error(`Failed to close worker: ${JSON.stringify(err)}`);
-      }
-    };
 
     while (failedAttempts < 5) {
       try {
@@ -115,13 +107,12 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
           const promises = [];
           const runPromise = super._run();
           promises.push(runPromise);
-          if (sync) {
-            /**
-             * sync and maintain the orderbook
-             */
-            const syncPromise = this._sync(signal);
-            promises.push(syncPromise);
-          }
+
+          /**
+           * sync and maintain the orderbook
+           */
+          const syncPromise = this._sync(signal);
+          promises.push(syncPromise);
           const abortPromise = new Promise((resolve, reject) => {
             signal.onabort = () => {
               reject(new Error('Lock aborted'));
@@ -134,7 +125,6 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
 
         await lockPromise;
       } catch (err) {
-        await close();
         failedAttempts += 1;
         if (err instanceof ExecutionError) {
           this.warn(`Failed to acquire lock, another instance is syncing. Attempt: ${failedAttempts}`);
@@ -145,23 +135,7 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
       }
     }
 
-    await close();
     throw new Error('Failed to acquire lock after 5 attempts');
-  }
-
-  async add(data: JobData | JobData[]): Promise<void> {
-    const arr = Array.isArray(data) ? data : [data];
-    const jobs: {
-      name: string;
-      data: JobData;
-      opts?: BulkJobOptions | undefined;
-    }[] = arr.map((item) => {
-      return {
-        name: item.id,
-        data: item
-      };
-    });
-    await this._queue.addBulk(jobs);
   }
 
   protected async _sync(signal: RedlockAbortSignal) {

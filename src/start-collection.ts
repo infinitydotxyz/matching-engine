@@ -1,3 +1,5 @@
+import { MetricsTime } from 'bullmq';
+
 import { getOBComplicationAddress } from '@infinityxyz/lib/utils';
 
 import { firestore, redis, redlock, storage } from './common/db';
@@ -15,13 +17,17 @@ export const getProcesses = (collection: string) => {
   const matchingEngine = new MatchingEngine(redis, config.env.chainId, orderbookStorage, redlock, collection, {
     debug: config.env.debug,
     concurrency: 1,
-    enableMetrics: false
+    enableMetrics: {
+      maxDataPoints: MetricsTime.ONE_WEEK * 2
+    }
   });
 
   const orderRelay = new OrderRelay(matchingEngine, firestore, storage, redlock, orderbook, redis, collection, {
     debug: config.env.debug,
     concurrency: 1,
-    enableMetrics: false
+    enableMetrics: {
+      maxDataPoints: MetricsTime.ONE_WEEK * 2
+    }
   });
 
   return { orderRelay, matchingEngine, orderbookStorage };
@@ -39,12 +45,8 @@ export const startCollection = async (_collection: string) => {
     await Promise.all([matchingEnginePromise, orderRelayPromise]);
   } catch (err) {
     logger.error(`start-collection`, `Failed to start collection ${collection} ${JSON.stringify(err)}`);
-    await matchingEngine.close().catch((err) => {
-      logger.error(`start-collection`, `Failed to close matching engine ${JSON.stringify(err)}`);
-    });
-    await orderRelay.close().catch((err) => {
-      logger.error(`start-collection`, `Failed to close order relay ${JSON.stringify(err)}`);
-    });
+    await matchingEngine.close();
+    await orderRelay.close();
     logger.log('start-collection', `Closed failed processes for ${collection}`);
   }
 };

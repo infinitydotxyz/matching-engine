@@ -1,3 +1,5 @@
+import { MetricsTime } from 'bullmq';
+
 import { firestore, redis, redlock } from './common/db';
 import { logger } from './common/logger';
 import { config, getNetworkConfig } from './config';
@@ -38,7 +40,9 @@ export const getExecutionEngine = async () => {
     {
       debug: config.env.debug,
       concurrency: network.isForkingEnabled ? 1 : 20, // ideally this is set high enough that we never max it out
-      enableMetrics: false
+      enableMetrics: {
+        maxDataPoints: MetricsTime.ONE_WEEK * 2
+      }
     }
   );
 

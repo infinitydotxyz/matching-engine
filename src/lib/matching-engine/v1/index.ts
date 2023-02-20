@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { BulkJobOptions, Job } from 'bullmq';
+import { Job } from 'bullmq';
 import { BigNumber } from 'ethers/lib/ethers';
 import { formatEther, formatUnits } from 'ethers/lib/utils';
 import { Redis } from 'ioredis';
@@ -128,14 +128,6 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
     const lockDuration = 15_000;
     let failedAttempts = 0;
 
-    const close = async () => {
-      try {
-        await this._worker.close();
-      } catch (err) {
-        this.error(`Failed to close worker: ${JSON.stringify(err)}`);
-      }
-    };
-
     while (failedAttempts < 5) {
       try {
         const lockPromise = this._redlock.using([matchingEngineLock], lockDuration, async (signal) => {
@@ -153,7 +145,6 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
         });
         await lockPromise;
       } catch (err) {
-        await close();
         failedAttempts += 1;
         if (err instanceof ExecutionError) {
           this.warn(`Failed to acquire lock, another instance is syncing. Attempt: ${failedAttempts}`);
@@ -164,23 +155,7 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
       }
     }
 
-    await close();
     throw new Error('Failed to acquire lock after 5 attempts');
-  }
-
-  async add(job: MatchingEngineJob | MatchingEngineJob[]): Promise<void> {
-    const arr = Array.isArray(job) ? job : [job];
-    const jobs: {
-      name: string;
-      data: MatchingEngineJob;
-      opts?: BulkJobOptions | undefined;
-    }[] = arr.map((item) => {
-      return {
-        name: `${item.id}`,
-        data: item
-      };
-    });
-    await this._queue.addBulk(jobs);
   }
 
   async matchOrder(order: OB.Order): Promise<

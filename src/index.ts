@@ -16,14 +16,14 @@ async function main() {
   const collection = '0xbc4ca0eda7647a8ab7c2061c2e118a18a936f13d'.toLowerCase();
 
   const promises = [];
-  const { matchingEngine, orderRelay } = getProcesses(collection);
-  if (config.components.orderRelay.enabled) {
-    logger.info('process', 'Starting order relay');
-    const orderRelayPromise = orderRelay.run();
-    promises.push(orderRelayPromise);
-  }
 
   if (config.components.matchingEngine.enabled) {
+    const { matchingEngine, orderRelay } = getProcesses(collection);
+    if (config.components.matchingEngine.enableSyncing) {
+      logger.info('process', 'Starting order relay');
+      const orderRelayPromise = orderRelay.run();
+      promises.push(orderRelayPromise);
+    }
     logger.info('process', 'Starting matching engine');
     const matchingEnginePromise = matchingEngine.run();
     promises.push(matchingEnginePromise);

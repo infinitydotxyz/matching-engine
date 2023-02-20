@@ -1,5 +1,5 @@
 import { FastifyInstance, FastifyPluginOptions } from 'fastify';
-import { startExecutionEngine } from 'start-execution-engine';
+import { getExecutionEngine, startExecutionEngine } from 'start-execution-engine';
 
 import { logger } from '@/common/logger';
 
@@ -12,6 +12,25 @@ export default async function register(fastify: FastifyInstance, options: Fastif
     });
 
     return { status: 'ok' };
+  });
+
+  fastify.get(`${base}`, async () => {
+    const { executionEngine } = await getExecutionEngine();
+
+    const jobsProcessing = await executionEngine.queue.count();
+    const jobCounts = await executionEngine.queue.getJobCounts();
+    const healthCheck = await executionEngine.checkHealth();
+
+    await executionEngine.close();
+
+    return {
+      isSynced: jobCounts.waiting < 100,
+      matchingEngine: {
+        healthStatus: healthCheck,
+        jobsProcessing: jobsProcessing,
+        jobCounts
+      }
+    };
   });
 
   await Promise.resolve();
