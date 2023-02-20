@@ -2,8 +2,6 @@ import { BulkJobOptions, Job, MetricsTime, Queue, QueueEvents, Worker } from 'bu
 import EventEmitter from 'events';
 import Redis from 'ioredis';
 
-import { sleep } from '@infinityxyz/lib/utils';
-
 import { logger } from '@/common/logger';
 
 import { JobDataType, ProcessJobResult, ProcessOptions, WithTiming } from './types';

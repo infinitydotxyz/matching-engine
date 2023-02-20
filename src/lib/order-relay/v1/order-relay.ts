@@ -373,17 +373,30 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
       const orderIterator = this._getSnapshot({ bucket, file });
       this.emit('snapshotLoading');
 
+      let page: JobData[] = [];
       for await (const item of orderIterator) {
         // the snapshot is assumed to contain only active orders
-        await this.add({
+        page.push({
           id: item.id,
           orderData: {
             ...item,
             status: 'active'
           }
         });
+        // await this.add({
+        // });
         numOrders += 1;
+        if (page.length % 1000 === 0) {
+          this._checkSignal(signal);
+          await this.add(page);
+          page = [];
+        }
+      }
+
+      if (page.length > 0) {
         this._checkSignal(signal);
+        await this.add(page);
+        page = [];
       }
     }
     const endLoadTime = Date.now();
