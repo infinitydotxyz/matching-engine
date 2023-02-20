@@ -2,7 +2,8 @@ import Fastify from 'fastify';
 
 import { config } from '@/config';
 
-import executionEngine from './endpoints/collection';
+import matchingEngine from './endpoints/collection';
+import executionEngine from './endpoints/execution';
 
 const fastify = Fastify({
   jsonShorthand: false,
@@ -12,6 +13,7 @@ const fastify = Fastify({
 });
 
 const register = async () => {
+  await fastify.register(matchingEngine);
   await fastify.register(executionEngine);
 };
 

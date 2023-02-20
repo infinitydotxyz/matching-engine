@@ -6,13 +6,12 @@ import { logger } from '@/common/logger';
 
 const base = '/collection';
 
-// eslint-disable-next-line @typescript-eslint/require-await
 export default async function register(fastify: FastifyInstance, options: FastifyPluginOptions) {
-  fastify.get(`${base}`, async (request, reply) => {
+  fastify.get(`${base}`, () => {
     return { hello: 'world' };
   });
 
-  fastify.put(`${base}/:collection`, async (request, reply) => {
+  fastify.put(`${base}/:collection`, (request) => {
     const collection =
       typeof request.params == 'object' &&
       request.params &&
@@ -30,4 +29,6 @@ export default async function register(fastify: FastifyInstance, options: Fastif
 
     return { status: 'ok' };
   });
+
+  await Promise.resolve();
 }

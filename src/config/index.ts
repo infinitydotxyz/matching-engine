@@ -1,5 +1,6 @@
 import { config as dotenv } from 'dotenv';
 import { ethers } from 'ethers';
+import { parseUnits } from 'ethers/lib/utils';
 
 import { DEFAULT_FLASHBOTS_RELAY, FlashbotsBundleProvider } from '@flashbots/ethers-provider-bundle';
 import { ChainId } from '@infinityxyz/lib/types/core';
@@ -134,7 +135,8 @@ export const config = {
     }
   },
   broadcasting: {
-    blockOffset: 2
+    blockOffset: 2,
+    priorityFee: chainId === ChainId.Mainnet ? parseUnits('3', 'gwei') : parseUnits('0.01', 'gwei')
   },
   redis: {
     connectionUrl: getEnvVariable('REDIS_URL')

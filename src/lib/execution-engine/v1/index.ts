@@ -1,6 +1,6 @@
 import { BulkJobOptions, Job } from 'bullmq';
 import { BigNumber, BigNumberish, ethers } from 'ethers';
-import { formatEther, formatUnits, parseUnits } from 'ethers/lib/utils';
+import { formatEther, formatUnits } from 'ethers/lib/utils';
 import Redis from 'ioredis';
 import PQueue from 'p-queue';
 import Redlock, { ExecutionError, RedlockAbortSignal } from 'redlock';
@@ -114,7 +114,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         return;
       }
 
-      const priorityFeeWei = parseUnits('0.01', 'gwei'); // TODO
+      const priorityFeeWei = config.broadcasting.priorityFee;
       const targetBaseFeeWei = target.baseFeePerGas;
       const targetMaxFeePerGasWei = BigNumber.from(targetBaseFeeWei).add(priorityFeeWei);
       const targetMaxFeePerGasGwei = parseFloat(formatUnits(targetMaxFeePerGasWei, 'gwei'));

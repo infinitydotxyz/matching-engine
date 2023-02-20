@@ -20,9 +20,20 @@ export class NonceProvider {
 
   protected _saveDelay: number;
 
+  protected _close?: () => void;
+  protected _closed = false;
+
+  public close() {
+    if (this._close && !this._closed) {
+      this._close();
+    }
+  }
+
   protected _checkSignal() {
     if (!this._signal || this._signal.aborted) {
       throw new Error('Nonce provider lock expired');
+    } else if (this._closed) {
+      throw new Error('Nonce provider closed');
     }
   }
 
@@ -41,6 +52,7 @@ export class NonceProvider {
       .collection('nonces')
       .doc(this._exchangeAddress) as FirebaseFirestore.DocumentReference<NonceProviderDoc>;
     this._saveDelay = options.saveDelay;
+    this._registerProcessListeners();
   }
 
   public async run() {
@@ -50,21 +62,22 @@ export class NonceProvider {
 
     await this._redlock
       .using([nonceProviderLockKey], lockDuration, async (signal) => {
-        logger.info(
-          'nonce-provider',
-          `Acquired nonce lock for account: ${this._accountAddress} exchange: ${this._exchangeAddress}`
-        );
+        this.log(`Acquired nonce lock for account: ${this._accountAddress} exchange: ${this._exchangeAddress}`);
         this._nonceLoaded = this._loadNonce();
         this._signal = signal;
         await this._nonceLoaded;
-        await new Promise(() => {
-          // Never resolve
+
+        await new Promise<void>((resolve) => {
+          this._close = () => {
+            this.log(`Closing nonce provider for account: ${this._accountAddress}`);
+            this._closed = true;
+            resolve();
+          };
         });
       })
       .catch((err) => {
         if (err instanceof ExecutionError) {
-          logger.warn(
-            'nonce-provider',
+          this.warn(
             `Failed to acquire lock, another instance is running for account: ${this._accountAddress} exchange: ${this._exchangeAddress}`
           );
         } else {
@@ -114,7 +127,7 @@ export class NonceProvider {
             { merge: true }
           );
         } catch (err) {
-          logger.error('nonce-provider', `Failed to save nonce: ${nonce?.toString?.()} Error: ${err}`);
+          this.error(`Failed to save nonce: ${nonce?.toString?.()} Error: ${err}`);
         }
       }, this._saveDelay);
     }
@@ -143,5 +156,27 @@ export class NonceProvider {
 
     const nonce = minNonce.gt(data.nonce) ? minNonce : BigNumber.from(data.nonce);
     this._nonce = nonce;
+  }
+
+  protected _registerProcessListeners() {
+    process.setMaxListeners(process.listenerCount('SIGINT') + 1);
+    process.once('SIGINT', () => {
+      try {
+        this.close();
+        this.log(`Gracefully closed`);
+      } catch (err) {
+        this.error(`Error closing process: ${JSON.stringify(err)}`);
+      }
+    });
+  }
+
+  log(message: string) {
+    logger.log('nonce-provider', message);
+  }
+  error(message: string) {
+    logger.error('nonce-provider', message);
+  }
+  warn(message: string) {
+    logger.warn('nonce-provider', message);
   }
 }
