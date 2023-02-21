@@ -20,6 +20,14 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
   }
 
   /**
+   * key value pairs of an order id to
+   * metadata about order match execution
+   */
+  getOrderMatchOperationMetadataKey(orderId: string) {
+    return `orderbook:${this.version}:chain:${this._chainId}:order-matches:${orderId}:metadata`;
+  }
+
+  /**
    * an ordered set of order ids that are
    * ordered by the matches max gas price
    */
@@ -122,7 +130,7 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
         } else {
           logger.log('orderbook-storage', `Removing order ${item.id} from active orders`);
           txn.srem(this.storedOrdersSetKey, item.id).zrem(this.activeOrdersOrderedSetKey, item.id);
-          txn.del(this.getFullOrderKey(item.id));
+          txn.del(this.getFullOrderKey(item.id), this.getOrderMatchOperationMetadataKey(item.id));
 
           for (const set of orderItemSets.sets) {
             txn.zrem(set, item.id);
@@ -284,5 +292,14 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
       return 'executed';
     }
     return 'active';
+  }
+
+  async getOrderMatchOperationMetadata(id: string) {
+    const result = await this._db.get(this.getOrderMatchOperationMetadataKey(id));
+    try {
+      return JSON.parse(result ?? '');
+    } catch (err) {
+      return null;
+    }
   }
 }

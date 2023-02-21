@@ -62,6 +62,12 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
     this._version = version;
   }
 
+  protected _isClosing = false;
+  async close() {
+    this._isClosing = true;
+    await this._close();
+  }
+
   async processJob(job: Job<JobData, JobResult, string>): Promise<JobResult> {
     const start = Date.now();
 
@@ -123,7 +129,6 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
             };
           });
           promises.push(abortPromise);
-
           await Promise.all(promises);
         });
 
@@ -168,7 +173,7 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
       ({ syncCursor } = await this._loadSnapshot(signal));
       await saveCursor(syncCursor);
 
-      while ((await this._queue.count()) > 0) {
+      while ((await this._queue.count()) > 500) {
         await sleep(1000);
       }
 
@@ -242,6 +247,9 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
         async (snapshot) => {
           try {
             this._checkSignal(signal);
+            if (this._isClosing) {
+              throw new Error('Closing');
+            }
             this.log(`Received ${snapshot.docChanges().length} order status events`);
 
             const eventsByType = snapshot.docChanges().reduce(
@@ -300,6 +308,9 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
             }
           } catch (err) {
             if (err instanceof ResourceLockedError || err instanceof ExecutionError) {
+              cancel();
+              return;
+            } else if (this._isClosing) {
               cancel();
               return;
             }

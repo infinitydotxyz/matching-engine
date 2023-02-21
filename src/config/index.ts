@@ -128,7 +128,7 @@ export const config = {
       enabled: Number(getEnvVariable('EXECUTION_ENGINE', false)) === 1
     },
     api: {
-      port: Number(getEnvVariable('PORT', false)) || 9090
+      port: Number(getEnvVariable('PORT', false)) || 8080
     }
   },
   broadcasting: {

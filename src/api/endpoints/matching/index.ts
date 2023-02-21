@@ -7,10 +7,6 @@ import { logger } from '@/common/logger';
 const base = '/matching';
 
 export default async function register(fastify: FastifyInstance, options: FastifyPluginOptions) {
-  fastify.get(`${base}`, () => {
-    return { hello: 'world' };
-  });
-
   /**
    * get the status of the matching engine for a collection
    */
@@ -103,11 +99,13 @@ export default async function register(fastify: FastifyInstance, options: Fastif
 
     const status = await orderbookStorage.getStatus(orderId);
     if (status !== 'not-found') {
+      const metadata = await orderbookStorage.getOrderMatchOperationMetadata(orderId);
       const response = await orderbookStorage.getOrderMatches(orderId);
       return {
         status,
         numMatches: response.numMatches,
-        matches: response.matches
+        matches: response.matches,
+        matchOperationMetadata: metadata ?? 'not-matched'
       };
     }
 

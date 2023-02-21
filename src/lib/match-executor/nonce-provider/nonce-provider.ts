@@ -28,8 +28,8 @@ export class NonceProvider {
   public close() {
     if (this._close && !this._closed) {
       this._close();
-      this._cancelProcessListeners?.();
     }
+    this._cancelProcessListeners?.();
   }
 
   protected _checkSignal() {
@@ -55,7 +55,7 @@ export class NonceProvider {
       .collection('nonces')
       .doc(this._exchangeAddress) as FirebaseFirestore.DocumentReference<NonceProviderDoc>;
     this._saveDelay = options.saveDelay;
-    this._cancelProcessListeners = this._registerProcessListeners();
+    this._registerProcessListeners();
   }
 
   public async run() {
@@ -174,11 +174,10 @@ export class NonceProvider {
     };
 
     process.once('SIGINT', handler);
-    const cancel = () => {
+    this._cancelProcessListeners = () => {
       process.removeListener('SIGINT', handler);
-      process.setMaxListeners(process.listenerCount('SIGINT') - 1);
+      process.setMaxListeners(Math.max(process.listenerCount('SIGINT') - 1, 0));
     };
-    return cancel;
   }
 
   log(message: string) {

@@ -15,16 +15,16 @@ export default async function register(fastify: FastifyInstance, options: Fastif
   });
 
   fastify.get(`${base}`, async () => {
-    const { executionEngine } = await getExecutionEngine();
+    const { executionEngine, nonceProvider } = await getExecutionEngine();
 
     const jobsProcessing = await executionEngine.queue.count();
     const jobCounts = await executionEngine.queue.getJobCounts();
     const healthCheck = await executionEngine.checkHealth();
 
+    nonceProvider.close();
     await executionEngine.close();
 
     return {
-      isSynced: jobCounts.waiting < 100,
       matchingEngine: {
         healthStatus: healthCheck,
         jobsProcessing: jobsProcessing,

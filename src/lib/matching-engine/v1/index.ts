@@ -16,6 +16,7 @@ import { OrderData, OrderParams } from '@/lib/orderbook/v1/types';
 import { ProcessOptions } from '@/lib/process/types';
 
 import { AbstractMatchingEngine } from '../matching-engine.abstract';
+import { MatchOperationMetadata } from '../types';
 
 export type MatchingEngineResult = {
   id: string;
@@ -51,6 +52,7 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
 
   async processJob(job: Job<MatchingEngineJob>): Promise<MatchingEngineResult> {
     const order = new OB.Order(job.data.order);
+    const matchTimestamp = Date.now();
     const matches = await this.matchOrder(order);
 
     const validMatches = await this.processMatches(order, matches);
@@ -98,6 +100,15 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
         const orderMatchesSet = this._storage.getOrderMatchesSet(orderId);
         const matchIdsArray = [...new Set(matchIds)];
         pipeline.sadd(orderMatchesSet, matchIdsArray);
+
+        const metadata: MatchOperationMetadata = {
+          timestamp: matchTimestamp,
+          validMatches: matchIdsArray.length,
+          matchLimit: this._MATCH_LIMIT,
+          side: order.id === orderId ? 'proposer' : 'recipient',
+          matchIds: matchIdsArray
+        };
+        pipeline.set(this._storage.getOrderMatchOperationMetadataKey(orderId), JSON.stringify(metadata));
       }
 
       for (const match of validMatches) {

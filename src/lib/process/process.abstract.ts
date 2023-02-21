@@ -160,7 +160,7 @@ export abstract class AbstractProcess<T extends { id: string }, U> extends Event
 
   protected _registerListeners(verbose = false): void {
     this._registerWorkerListeners(verbose);
-    this._cancelProcessListeners = this._registerProcessListeners();
+    this._registerProcessListeners();
   }
 
   protected _registerProcessListeners() {
@@ -177,11 +177,10 @@ export abstract class AbstractProcess<T extends { id: string }, U> extends Event
     };
 
     process.once('SIGINT', handler);
-    const cancel = () => {
+    this._cancelProcessListeners = () => {
       process.removeListener('SIGINT', handler);
-      process.setMaxListeners(process.listenerCount('SIGINT') - 1);
+      process.setMaxListeners(Math.max(process.listenerCount('SIGINT') - 1, 0));
     };
-    return cancel;
   }
 
   public async checkHealth() {
@@ -192,17 +191,29 @@ export abstract class AbstractProcess<T extends { id: string }, U> extends Event
 
     try {
       await queueEvents.waitUntilReady();
-      const job = await this._queue.add(
-        'health-check',
-        {
-          id: 'health-check',
-          _processMetadata: {
-            type: 'health-check'
+      let attempts = 0;
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        attempts += 1;
+        const job = await this._queue.add(
+          'health-check',
+          {
+            id: 'health-check',
+            _processMetadata: {
+              type: 'health-check'
+            }
+          },
+          { priority: 10 }
+        );
+        try {
+          await job.waitUntilFinished(queueEvents, 2000);
+          break;
+        } catch (err) {
+          if (attempts >= 3) {
+            throw err;
           }
-        },
-        { priority: 10 }
-      );
-      await job.waitUntilFinished(queueEvents, 10_000);
+        }
+      }
       await queueEvents.close();
       return {
         status: 'healthy'
