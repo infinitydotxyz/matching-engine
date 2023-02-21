@@ -128,6 +128,7 @@ export const config = {
       enabled: Number(getEnvVariable('EXECUTION_ENGINE', false)) === 1
     },
     api: {
+      readonly: Number(getEnvVariable('API_READONLY', false)) === 1,
       port: Number(getEnvVariable('PORT', false)) || 8080
     }
   },

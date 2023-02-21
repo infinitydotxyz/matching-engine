@@ -3,6 +3,7 @@ import { FastifyInstance, FastifyPluginOptions } from 'fastify';
 import { getOrderbook, getProcesses, startCollection } from 'start-collection';
 
 import { logger } from '@/common/logger';
+import { config } from '@/config';
 
 const base = '/matching';
 
@@ -58,30 +59,31 @@ export default async function register(fastify: FastifyInstance, options: Fastif
     };
   });
 
-  /**
-   * start the matching engine for a collection
-   */
-  fastify.put(`${base}/collection/:collection`, (request) => {
-    const _collection =
-      typeof request.params == 'object' &&
-      request.params &&
-      'collection' in request.params &&
-      typeof request.params.collection === 'string'
-        ? request.params.collection
-        : '';
+  if (!config.components.api.readonly) {
+    /**
+     * start the matching engine for a collection
+     */
+    fastify.put(`${base}/collection/:collection`, (request) => {
+      const _collection =
+        typeof request.params == 'object' &&
+        request.params &&
+        'collection' in request.params &&
+        typeof request.params.collection === 'string'
+          ? request.params.collection
+          : '';
 
-    if (!ethers.utils.isAddress(_collection)) {
-      throw new Error('Invalid collection address');
-    }
-    const collection = _collection.toLowerCase();
+      if (!ethers.utils.isAddress(_collection)) {
+        throw new Error('Invalid collection address');
+      }
+      const collection = _collection.toLowerCase();
 
-    startCollection(collection).catch((err) => {
-      logger.error(`PUT ${base}/:collection`, `Failed to start collection ${collection} ${JSON.stringify(err)}`);
+      startCollection(collection).catch((err) => {
+        logger.error(`PUT ${base}/:collection`, `Failed to start collection ${collection} ${JSON.stringify(err)}`);
+      });
+
+      return { status: 'ok' };
     });
-
-    return { status: 'ok' };
-  });
-
+  }
   fastify.get(`${base}/order/:order`, async (request) => {
     const orderId =
       typeof request.params == 'object' &&
@@ -119,58 +121,61 @@ export default async function register(fastify: FastifyInstance, options: Fastif
   /**
    * trigger the matching engine to match orders
    */
-  fastify.put(`${base}/order/:order`, async (request) => {
-    const orderId =
-      typeof request.params == 'object' &&
-      request.params &&
-      'order' in request.params &&
-      typeof request.params.order === 'string'
-        ? request.params.order
-        : '';
 
-    if (!ethers.utils.isHexString(orderId)) {
-      throw new Error('Invalid order hash');
-    }
+  if (!config.components.api.readonly) {
+    fastify.put(`${base}/order/:order`, async (request) => {
+      const orderId =
+        typeof request.params == 'object' &&
+        request.params &&
+        'order' in request.params &&
+        typeof request.params.order === 'string'
+          ? request.params.order
+          : '';
 
-    const { orderbookStorage } = getOrderbook();
+      if (!ethers.utils.isHexString(orderId)) {
+        throw new Error('Invalid order hash');
+      }
 
-    const status = await orderbookStorage.getStatus(orderId);
+      const { orderbookStorage } = getOrderbook();
 
-    if (status !== 'active') {
+      const status = await orderbookStorage.getStatus(orderId);
+
+      if (status !== 'active') {
+        return {
+          success: false,
+          reason: 'order is not active'
+        };
+      }
+
+      const order = await orderbookStorage.getOrder(orderId);
+      if (!order) {
+        return {
+          success: false,
+          reason: 'failed to find order'
+        };
+      }
+
+      const collections = orderbookStorage.getOrderCollections(order);
+      const orderParams = orderbookStorage.getOrderParams(order);
+      const collection = collections[0];
+      if (collections.length !== 1) {
+        logger.error(`PUT ${base}/order/:order`, `Order ${orderId} has multiple collections`);
+        return {
+          success: false,
+          reason: 'order has multiple collections'
+        };
+      }
+
+      const processes = getProcesses(collection);
+      await processes.matchingEngine.add({ id: orderId, order: orderParams });
+      await processes.matchingEngine.close();
+      await processes.orderRelay.close();
+
       return {
-        success: false,
-        reason: 'order is not active'
+        success: true
       };
-    }
-
-    const order = await orderbookStorage.getOrder(orderId);
-    if (!order) {
-      return {
-        success: false,
-        reason: 'failed to find order'
-      };
-    }
-
-    const collections = orderbookStorage.getOrderCollections(order);
-    const orderParams = orderbookStorage.getOrderParams(order);
-    const collection = collections[0];
-    if (collections.length !== 1) {
-      logger.error(`PUT ${base}/order/:order`, `Order ${orderId} has multiple collections`);
-      return {
-        success: false,
-        reason: 'order has multiple collections'
-      };
-    }
-
-    const processes = getProcesses(collection);
-    await processes.matchingEngine.add({ id: orderId, order: orderParams });
-    await processes.matchingEngine.close();
-    await processes.orderRelay.close();
-
-    return {
-      success: true
-    };
-  });
+    });
+  }
 
   await Promise.resolve();
 }

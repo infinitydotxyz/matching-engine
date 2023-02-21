@@ -2,17 +2,20 @@ import { FastifyInstance, FastifyPluginOptions } from 'fastify';
 import { getExecutionEngine, startExecutionEngine } from 'start-execution-engine';
 
 import { logger } from '@/common/logger';
+import { config } from '@/config';
 
 const base = '/execution';
 
 export default async function register(fastify: FastifyInstance, options: FastifyPluginOptions) {
-  fastify.put(`${base}`, () => {
-    startExecutionEngine().catch((err) => {
-      logger.error(`PUT ${base}`, `Failed to start execution engine ${JSON.stringify(err)}`);
-    });
+  if (!config.components.api.readonly) {
+    fastify.put(`${base}`, () => {
+      startExecutionEngine().catch((err) => {
+        logger.error(`PUT ${base}`, `Failed to start execution engine ${JSON.stringify(err)}`);
+      });
 
-    return { status: 'ok' };
-  });
+      return { status: 'ok' };
+    });
+  }
 
   fastify.get(`${base}`, async () => {
     const { executionEngine, nonceProvider } = await getExecutionEngine();
