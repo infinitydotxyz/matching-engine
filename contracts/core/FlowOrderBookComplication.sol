@@ -15,7 +15,11 @@ import { IFlowComplication } from "../interfaces/IFlowComplication.sol";
  * @author nneverlander. Twitter @nneverlander
  * @notice Complication to execute orderbook orders
  */
-contract FlowOrderBookComplication is IFlowComplication, Ownable {
+contract FlowOrderBookComplication is
+    IFlowComplication,
+    Ownable,
+    SignatureChecker
+{
     using EnumerableSet for EnumerableSet.AddressSet;
     uint256 public constant PRECISION = 1e4; // precision for division; similar to bps
 

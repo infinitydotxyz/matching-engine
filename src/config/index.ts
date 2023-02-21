@@ -1,5 +1,6 @@
 import { config as dotenv } from 'dotenv';
 import { ethers } from 'ethers';
+import { parseUnits } from 'ethers/lib/utils';
 
 import { DEFAULT_FLASHBOTS_RELAY, FlashbotsBundleProvider } from '@flashbots/ethers-provider-bundle';
 import { ChainId } from '@infinityxyz/lib/types/core';
@@ -119,19 +120,21 @@ export const config = {
     isForkingEnabled
   },
   components: {
-    orderRelay: {
-      enableSyncing: true,
-      enabled: Number(getEnvVariable('ORDER_RELAY', false)) === 1
-    },
     matchingEngine: {
+      enableSyncing: true,
       enabled: Number(getEnvVariable('MATCHING_ENGINE', false)) === 1
     },
     executionEngine: {
       enabled: Number(getEnvVariable('EXECUTION_ENGINE', false)) === 1
+    },
+    api: {
+      readonly: Number(getEnvVariable('API_READONLY', false)) === 1,
+      port: Number(getEnvVariable('PORT', false)) || 8080
     }
   },
   broadcasting: {
-    blockOffset: 2
+    blockOffset: 2,
+    priorityFee: chainId === ChainId.Mainnet ? parseUnits('3', 'gwei') : parseUnits('0.01', 'gwei')
   },
   redis: {
     connectionUrl: getEnvVariable('REDIS_URL')

@@ -1,12 +1,12 @@
 version: '3'
 services:
   redis:
-    image: redis/redis-stack-server:latest
-    command: sh -c "redis-stack-server"
+    image: redis:latest
+    command: sh -c "redis-server --port 6380"
     networks:
       - local
     ports: 
-      - 6379:6379
+      - 6380:6380
 
 networks: 
   local:

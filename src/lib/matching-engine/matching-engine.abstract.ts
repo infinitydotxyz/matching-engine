@@ -17,5 +17,4 @@ export abstract class AbstractMatchingEngine<T extends { id: string }, U> extend
   }
 
   abstract processJob(job: Job<T, U>): Promise<U>;
-  abstract add(jobs: T | T[]): Promise<void>;
 }

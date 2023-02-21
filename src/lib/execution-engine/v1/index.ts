@@ -1,6 +1,6 @@
-import { BulkJobOptions, Job } from 'bullmq';
+import { Job } from 'bullmq';
 import { BigNumber, BigNumberish, ethers } from 'ethers';
-import { formatEther, formatUnits, parseUnits } from 'ethers/lib/utils';
+import { formatEther, formatUnits } from 'ethers/lib/utils';
 import Redis from 'ioredis';
 import PQueue from 'p-queue';
 import Redlock, { ExecutionError, RedlockAbortSignal } from 'redlock';
@@ -60,21 +60,6 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     this._startTimestampSeconds = Math.floor(Date.now() / 1000);
   }
 
-  async add(job: ExecutionEngineJob | ExecutionEngineJob[]): Promise<void> {
-    const arr = Array.isArray(job) ? job : [job];
-    const jobs: {
-      name: string;
-      data: ExecutionEngineJob;
-      opts?: BulkJobOptions | undefined;
-    }[] = arr.map((item) => {
-      return {
-        name: `${item.id}`,
-        data: item
-      };
-    });
-    await this._queue.addBulk(jobs);
-  }
-
   public async run(): Promise<void> {
     const blockListenerLockKey = `execution-engine:chain:${config.env.chainId}:lock`;
     const lockDuration = 15_000;
@@ -114,7 +99,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         return;
       }
 
-      const priorityFeeWei = parseUnits('0.01', 'gwei'); // TODO
+      const priorityFeeWei = config.broadcasting.priorityFee;
       const targetBaseFeeWei = target.baseFeePerGas;
       const targetMaxFeePerGasWei = BigNumber.from(targetBaseFeeWei).add(priorityFeeWei);
       const targetMaxFeePerGasGwei = parseFloat(formatUnits(targetMaxFeePerGasWei, 'gwei'));

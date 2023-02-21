@@ -1,4 +1,4 @@
-import { BulkJobOptions, Job } from 'bullmq';
+import { Job } from 'bullmq';
 import { ethers } from 'ethers';
 import { Storage } from 'firebase-admin/lib/storage/storage';
 import { Redis } from 'ioredis';
@@ -62,6 +62,12 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
     this._version = version;
   }
 
+  protected _isClosing = false;
+  async close() {
+    this._isClosing = true;
+    await this._close();
+  }
+
   async processJob(job: Job<JobData, JobResult, string>): Promise<JobResult> {
     const start = Date.now();
 
@@ -94,67 +100,51 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
     };
   }
 
-  public async run(sync = true) {
-    const orderSyncKey = `order-relay:chain:${config.env.chainId}:collection:${this.collectionAddress}:lock`;
+  public async run() {
+    const orderRelayLock = `order-relay:chain:${config.env.chainId}:collection:${this.collectionAddress}:lock`;
     const lockDuration = 15_000;
+    let failedAttempts = 0;
 
-    /**
-     * start processing jobs from the queue
-     */
-    const runPromise = super._run().catch((err: Error) => {
-      this.error(`Unexpected error: ${err.message}`);
-    });
+    while (failedAttempts < 5) {
+      try {
+        const lockPromise = this._redlock.using([orderRelayLock], lockDuration, async (signal) => {
+          this.log(`Acquired lock`);
+          failedAttempts = 0;
+          const promises = [];
+          const runPromise = super._run();
+          promises.push(runPromise);
 
-    if (sync) {
-      for (;;) {
-        try {
-          const syncPromise = this._redlock
-            .using([orderSyncKey], lockDuration, async (signal) => {
-              /**
-               * sync and maintain the orderbook
-               */
-              await this._sync(signal);
-            })
-            .catch((err) => {
-              if (err instanceof ExecutionError) {
-                this.warn('Failed to acquire lock, another instance is syncing');
-              } else {
-                throw err;
-              }
-            });
           /**
-           * wait for the lock to be released, or fail to acquire
+           * sync and maintain the orderbook
            */
-          await syncPromise;
-        } catch (err) {
-          this.error(`Unexpected error: ${err}`);
+          const syncPromise = this._sync(signal);
+          promises.push(syncPromise);
+          const abortPromise = new Promise((resolve, reject) => {
+            signal.onabort = () => {
+              if (signal.error) {
+                reject(signal.error);
+              } else {
+                reject(new Error('Lock aborted'));
+              }
+            };
+          });
+          promises.push(abortPromise);
+          await Promise.all(promises);
+        });
+
+        await lockPromise;
+      } catch (err) {
+        failedAttempts += 1;
+        if (err instanceof ExecutionError) {
+          this.warn(`Failed to acquire lock, another instance is syncing. Attempt: ${failedAttempts}`);
+        } else {
+          this.error(`Unknown error occurred. Attempt: ${failedAttempts} ${JSON.stringify(err)}`);
         }
-        /**
-         * wait before trying to acquire the lock again
-         * - note this will cause all order relay instances
-         * with `sync=true` to attempt to repeatedly acquire the lock
-         */
         await sleep(lockDuration / 3);
       }
-    } else {
-      await runPromise;
-      return;
     }
-  }
 
-  async add(data: JobData | JobData[]): Promise<void> {
-    const arr = Array.isArray(data) ? data : [data];
-    const jobs: {
-      name: string;
-      data: JobData;
-      opts?: BulkJobOptions | undefined;
-    }[] = arr.map((item) => {
-      return {
-        name: item.id,
-        data: item
-      };
-    });
-    await this._queue.addBulk(jobs);
+    throw new Error('Failed to acquire lock after 5 attempts');
   }
 
   protected async _sync(signal: RedlockAbortSignal) {
@@ -179,8 +169,15 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
      * if we failed to find a cursor, load the most recent snapshot
      */
     if (!syncCursor) {
+      this._worker.concurrency = 15;
       ({ syncCursor } = await this._loadSnapshot(signal));
       await saveCursor(syncCursor);
+
+      while ((await this._queue.count()) > 500) {
+        await sleep(1000);
+      }
+
+      this._worker.concurrency = 1;
     }
 
     /**
@@ -250,6 +247,9 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
         async (snapshot) => {
           try {
             this._checkSignal(signal);
+            if (this._isClosing) {
+              throw new Error('Closing');
+            }
             this.log(`Received ${snapshot.docChanges().length} order status events`);
 
             const eventsByType = snapshot.docChanges().reduce(
@@ -310,6 +310,9 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
             if (err instanceof ResourceLockedError || err instanceof ExecutionError) {
               cancel();
               return;
+            } else if (this._isClosing) {
+              cancel();
+              return;
             }
           }
         },
@@ -356,8 +359,10 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
     );
 
     let numEvents = 0;
+
+    let page = [];
     for await (const { data } of stream) {
-      await this.add({
+      page.push({
         id: data.orderId,
         orderData: {
           id: data.orderId,
@@ -370,9 +375,16 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
       });
 
       numEvents += 1;
-      if (numEvents % 300 === 0) {
+
+      if (page.length % 1000 === 0) {
+        await this.add(page);
+        page = [];
         yield { syncCursor: cursor, numEvents, complete: false };
       }
+    }
+    if (page.length > 0) {
+      await this.add(page);
+      page = [];
     }
 
     yield { syncCursor: cursor, numEvents, complete: true };
@@ -381,24 +393,40 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
   protected async _loadSnapshot(signal: RedlockAbortSignal): Promise<{ syncCursor: OrderStatusEventSyncCursor }> {
     const startTime = Date.now();
 
-    const { bucket, file, timestamp } = await this._getSnapshotMetadata();
+    const result = await this._getSnapshotMetadata();
 
     this._checkSignal(signal);
-    const orderIterator = this._getSnapshot({ bucket, file });
-    this.emit('snapshotLoading');
-
     let numOrders = 0;
-    for await (const item of orderIterator) {
-      // the snapshot is assumed to contain only active orders
-      await this.add({
-        id: item.id,
-        orderData: {
-          ...item,
-          status: 'active'
+    let timestamp = 0;
+    if (result) {
+      const { bucket, file, timestamp: snapshotTimestamp } = result;
+      timestamp = snapshotTimestamp;
+      const orderIterator = this._getSnapshot({ bucket, file });
+      this.emit('snapshotLoading');
+
+      let page: JobData[] = [];
+      for await (const item of orderIterator) {
+        // the snapshot is assumed to contain only active orders
+        page.push({
+          id: item.id,
+          orderData: {
+            ...item,
+            status: 'active'
+          }
+        });
+        numOrders += 1;
+        if (page.length % 1000 === 0) {
+          this._checkSignal(signal);
+          await this.add(page);
+          page = [];
         }
-      });
-      numOrders += 1;
-      this._checkSignal(signal);
+      }
+
+      if (page.length > 0) {
+        this._checkSignal(signal);
+        await this.add(page);
+        page = [];
+      }
     }
     const endLoadTime = Date.now();
     this.emit('snapshotLoaded', {
@@ -448,7 +476,7 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
     }
   }
 
-  protected async _getSnapshotMetadata(): Promise<SnapshotMetadata> {
+  protected async _getSnapshotMetadata(): Promise<SnapshotMetadata | null> {
     const orderSnapshotsRef = this._firestore.collection(
       'orderSnapshots'
     ) as FirebaseFirestore.CollectionReference<SnapshotMetadata>;
@@ -464,7 +492,8 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
     const snapshotMetadata = snap.docs[0]?.data?.();
 
     if (!snapshotMetadata) {
-      throw new Error('No snapshot metadata found');
+      this.warn('No snapshot found');
+      return null;
     }
 
     return snapshotMetadata;
