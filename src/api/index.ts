@@ -15,7 +15,8 @@ const fastify = Fastify({
 const register = async () => {
   if (config.components.executionEngine.enabled) {
     await fastify.register(executionEngine);
-  } else if (config.components.matchingEngine.enabled) {
+  }
+  if (config.components.matchingEngine.enabled) {
     await fastify.register(matchingEngine);
   }
 };

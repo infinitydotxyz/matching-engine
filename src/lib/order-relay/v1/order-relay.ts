@@ -115,7 +115,11 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
           promises.push(syncPromise);
           const abortPromise = new Promise((resolve, reject) => {
             signal.onabort = () => {
-              reject(new Error('Lock aborted'));
+              if (signal.error) {
+                reject(signal.error);
+              } else {
+                reject(new Error('Lock aborted'));
+              }
             };
           });
           promises.push(abortPromise);
@@ -160,8 +164,15 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
      * if we failed to find a cursor, load the most recent snapshot
      */
     if (!syncCursor) {
+      this._worker.concurrency = 15;
       ({ syncCursor } = await this._loadSnapshot(signal));
       await saveCursor(syncCursor);
+
+      while ((await this._queue.count()) > 0) {
+        await sleep(1000);
+      }
+
+      this._worker.concurrency = 1;
     }
 
     /**
@@ -337,8 +348,10 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
     );
 
     let numEvents = 0;
+
+    let page = [];
     for await (const { data } of stream) {
-      await this.add({
+      page.push({
         id: data.orderId,
         orderData: {
           id: data.orderId,
@@ -351,9 +364,16 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
       });
 
       numEvents += 1;
-      if (numEvents % 300 === 0) {
+
+      if (page.length % 1000 === 0) {
+        await this.add(page);
+        page = [];
         yield { syncCursor: cursor, numEvents, complete: false };
       }
+    }
+    if (page.length > 0) {
+      await this.add(page);
+      page = [];
     }
 
     yield { syncCursor: cursor, numEvents, complete: true };
@@ -383,8 +403,6 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
             status: 'active'
           }
         });
-        // await this.add({
-        // });
         numOrders += 1;
         if (page.length % 1000 === 0) {
           this._checkSignal(signal);

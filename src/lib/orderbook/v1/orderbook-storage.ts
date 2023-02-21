@@ -3,6 +3,7 @@ import { Redis } from 'ioredis';
 import { ChainId } from '@infinityxyz/lib/types/core';
 
 import { logger } from '@/common/logger';
+import { Match } from '@/lib/match-executor/match/types';
 
 import { AbstractOrderbookStorage } from '../orderbook-storage.abstract';
 import { Order } from './order';
@@ -164,6 +165,7 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
     const orderItem = order.getOrderItem();
 
     const sets: string[] = [];
+    const collections: Set<string> = new Set();
 
     switch (`${order.params.side}:${'tokenId' in orderItem ? 'token' : 'collection'}`) {
       case 'buy:token': {
@@ -182,6 +184,7 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
         });
 
         sets.push(tokenOffers, tokenCollectionOffers);
+        collections.add(orderItem.collection);
         break;
       }
       case 'buy:collection': {
@@ -191,6 +194,7 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
           collection: orderItem.collection
         });
         sets.push(collectionWideOffers);
+        collections.add(orderItem.collection);
         break;
       }
       case 'sell:token': {
@@ -208,6 +212,7 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
           collection: orderItem.collection
         });
         sets.push(tokenSells, tokenCollectionSells);
+        collections.add(orderItem.collection);
         break;
       }
       case 'sell:collection': {
@@ -217,6 +222,67 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
 
     const orderScore = order.params.startPriceEth;
 
-    return { sets, orderScore };
+    return { sets, orderScore, collections: Array.from(collections) };
+  }
+
+  async getOrder(id: string): Promise<OrderData | null> {
+    const fullOrder = await this._db.get(this.getFullOrderKey(id));
+    if (fullOrder) {
+      try {
+        return JSON.parse(fullOrder);
+      } catch (err) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  getOrderCollections(order: OrderData) {
+    const collections = this._getOrderItemSets(
+      new Order(Order.getOrderParams(order.id, this._chainId, order.order))
+    ).collections;
+
+    return collections;
+  }
+
+  getOrderParams(order: OrderData) {
+    return Order.getOrderParams(order.id, this._chainId, order.order);
+  }
+
+  async getOrderMatches(id: string, cursor = '0') {
+    const set = this.getOrderMatchesSet(id);
+    const numMatches = await this._db.scard(set);
+    const [updatedCursor, matches] = await this._db.sscan(set, cursor);
+
+    if (matches.length > 0) {
+      const fullMatches = await this._db.mget(matches.map(this.getFullMatchKey.bind(this)));
+      const parsedMatches = fullMatches.map((match) => (match ? JSON.parse(match) : null)) as Match[];
+
+      return {
+        cursor: updatedCursor,
+        numMatches,
+        matches: parsedMatches
+      };
+    }
+    return {
+      cursor: updatedCursor,
+      numMatches,
+      matches: [] as Match[]
+    };
+  }
+
+  async getStatus(id: string): Promise<'active' | 'executed' | 'not-found'> {
+    const exists = await this.has(id);
+    if (!exists) {
+      return 'not-found';
+    }
+
+    const scores = await this._db.zmscore(this.executedOrdersOrderedSetKey, id);
+    const score = scores[0];
+
+    if (score) {
+      return 'executed';
+    }
+    return 'active';
   }
 }
