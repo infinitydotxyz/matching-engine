@@ -1,12 +1,13 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { BulkJobOptions, Job } from 'bullmq';
+import { Job } from 'bullmq';
 import { BigNumber } from 'ethers/lib/ethers';
 import { formatEther, formatUnits } from 'ethers/lib/utils';
 import { Redis } from 'ioredis';
+import Redlock, { ExecutionError } from 'redlock';
 
 import { ChainId } from '@infinityxyz/lib/types/core';
+import { sleep } from '@infinityxyz/lib/utils';
 
-import { logger } from '@/common/logger';
 import { config } from '@/config';
 import { Match } from '@/lib/match-executor/match/types';
 import { OrderbookV1 as OB } from '@/lib/orderbook';
@@ -15,6 +16,7 @@ import { OrderData, OrderParams } from '@/lib/orderbook/v1/types';
 import { ProcessOptions } from '@/lib/process/types';
 
 import { AbstractMatchingEngine } from '../matching-engine.abstract';
+import { MatchOperationMetadata } from '../types';
 
 export type MatchingEngineResult = {
   id: string;
@@ -39,21 +41,24 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
     _db: Redis,
     _chainId: ChainId,
     protected _storage: OB.OrderbookStorage,
+    protected _redlock: Redlock,
+    public readonly collectionAddress: string,
     options?: ProcessOptions | undefined
   ) {
     const version = 'v1';
-    super(_chainId, _db, `matching-engine:${version}`, options);
+    super(_chainId, _db, `matching-engine:${version}:collection:${collectionAddress}`, options);
     this.version = version;
   }
 
   async processJob(job: Job<MatchingEngineJob>): Promise<MatchingEngineResult> {
     const order = new OB.Order(job.data.order);
+    const matchTimestamp = Date.now();
     const matches = await this.matchOrder(order);
 
     const validMatches = await this.processMatches(order, matches);
     const orderId = order.id;
 
-    logger.log('matching-engine', `found ${validMatches.length} valid matches for order ${order.id}`);
+    this.log(`found ${validMatches.length} valid matches for order ${order.id}`);
     if (validMatches.length > 0) {
       type DbMatch = {
         otherOrderIds: string[];
@@ -95,6 +100,15 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
         const orderMatchesSet = this._storage.getOrderMatchesSet(orderId);
         const matchIdsArray = [...new Set(matchIds)];
         pipeline.sadd(orderMatchesSet, matchIdsArray);
+
+        const metadata: MatchOperationMetadata = {
+          timestamp: matchTimestamp,
+          validMatches: matchIdsArray.length,
+          matchLimit: this._MATCH_LIMIT,
+          side: order.id === orderId ? 'proposer' : 'recipient',
+          matchIds: matchIdsArray
+        };
+        pipeline.set(this._storage.getOrderMatchOperationMetadataKey(orderId), JSON.stringify(metadata));
       }
 
       for (const match of validMatches) {
@@ -108,7 +122,7 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
       if (res) {
         for (const [err] of res) {
           if (err) {
-            logger.error('matching-engine', `failed to save matches for order ${order.id} ${err}`);
+            this.error(`failed to save matches for order ${order.id} ${err}`);
           }
         }
       }
@@ -120,19 +134,39 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
     };
   }
 
-  async add(job: MatchingEngineJob | MatchingEngineJob[]): Promise<void> {
-    const arr = Array.isArray(job) ? job : [job];
-    const jobs: {
-      name: string;
-      data: MatchingEngineJob;
-      opts?: BulkJobOptions | undefined;
-    }[] = arr.map((item) => {
-      return {
-        name: `${item.id}`,
-        data: item
-      };
-    });
-    await this._queue.addBulk(jobs);
+  public async run() {
+    const matchingEngineLock = `matching-engine:chain:${config.env.chainId}:collection:${this.collectionAddress}:lock`;
+    const lockDuration = 15_000;
+    let failedAttempts = 0;
+
+    while (failedAttempts < 5) {
+      try {
+        const lockPromise = this._redlock.using([matchingEngineLock], lockDuration, async (signal) => {
+          this.log(`Acquired lock`);
+          failedAttempts = 0;
+
+          const abortPromise = new Promise((resolve, reject) => {
+            signal.onabort = () => {
+              reject(new Error('Lock aborted'));
+            };
+          });
+
+          const runPromise = super._run();
+          await Promise.all([abortPromise, runPromise]);
+        });
+        await lockPromise;
+      } catch (err) {
+        failedAttempts += 1;
+        if (err instanceof ExecutionError) {
+          this.warn(`Failed to acquire lock, another instance is syncing. Attempt: ${failedAttempts}`);
+        } else {
+          this.error(`Unknown error occurred. Attempt: ${failedAttempts} ${JSON.stringify(err)}`);
+        }
+        await sleep(lockDuration / 3);
+      }
+    }
+
+    throw new Error('Failed to acquire lock after 5 attempts');
   }
 
   async matchOrder(order: OB.Order): Promise<
@@ -369,7 +403,7 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
     const validMatches: Match[] = [];
     for (const { matchData, fullOrderData: matchOrderData } of matchesWithFullData) {
       if (!matchOrderData) {
-        logger.error('matching-engine', `order ${matchData.id} not found`);
+        this.error(`order ${matchData.id} not found`);
         continue;
       }
 
@@ -416,10 +450,7 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
           maxGasPriceGwei = Math.min(maxSourceGasPriceGwei, executionPrices.maxGasPriceGwei);
         }
 
-        logger.log(
-          'matching-engine',
-          `match found: ${offer.id} -> ${listing.id} (maxGasPriceGwei: ${maxGasPriceGwei})`
-        );
+        this.log(`match found: ${offer.id} -> ${listing.id} (maxGasPriceGwei: ${maxGasPriceGwei})`);
 
         validMatches.push({
           matchId: `${offer.id}:${listing.id}`,
@@ -431,9 +462,9 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
         });
       } catch (err) {
         if (err instanceof Error) {
-          logger.error('matching-engine', `order ${matchData.id} has error. ${err.message}`);
+          this.error(`order ${matchData.id} has error. ${err.message}`);
         } else {
-          logger.error('matching-engine', `order ${matchData.id} has error. ${err}`);
+          this.error(`order ${matchData.id} has error. ${err}`);
         }
       }
     }

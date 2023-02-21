@@ -15,7 +15,7 @@ const log = (level: 'error' | 'info' | 'warn') => {
   const logger = createLogger(options);
 
   return (component: string, message: string): Logger =>
-    logger.log(level, message, {
+    logger.log(level, `${component} - ${message}`, {
       component,
       version: process.env.npm_package_version
     });

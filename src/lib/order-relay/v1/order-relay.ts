@@ -1,4 +1,5 @@
-import { BulkJobOptions, Job } from 'bullmq';
+import { Job } from 'bullmq';
+import { ethers } from 'ethers';
 import { Storage } from 'firebase-admin/lib/storage/storage';
 import { Redis } from 'ioredis';
 import * as ReadLine from 'readline';
@@ -7,7 +8,6 @@ import Redlock, { ExecutionError, RedlockAbortSignal, ResourceLockedError } from
 import { ChainId, OrderStatusEvent } from '@infinityxyz/lib/types/core';
 import { sleep } from '@infinityxyz/lib/utils';
 
-import { logger } from '@/common/logger';
 import { config } from '@/config';
 import { streamQueryWithRef } from '@/lib/firestore';
 import { MatchingEngine } from '@/lib/matching-engine/v1';
@@ -24,6 +24,7 @@ export interface SnapshotMetadata {
   chainId: ChainId;
   numOrders: number;
   timestamp: number;
+  collection: string;
 }
 
 export interface JobData {
@@ -49,11 +50,22 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
     protected _redlock: Redlock,
     orderbook: OB.Orderbook,
     db: Redis,
+    public readonly collectionAddress: string,
     options?: Partial<ProcessOptions>
   ) {
     const version = 'v1';
-    super(orderbook, db, `order-relay:${version}`, options);
+    super(orderbook, db, `order-relay:${version}:collection:${collectionAddress}`, options);
+
+    if (!this.collectionAddress || !ethers.utils.isAddress(this.collectionAddress)) {
+      throw new Error('Invalid collection address');
+    }
     this._version = version;
+  }
+
+  protected _isClosing = false;
+  async close() {
+    this._isClosing = true;
+    await this._close();
   }
 
   async processJob(job: Job<JobData, JobResult, string>): Promise<JobResult> {
@@ -73,7 +85,7 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
       }
       successful = true;
     } catch (err) {
-      logger.error('order-relay', `Failed to process order ${job.data.id}: ${(err as Error).message}`);
+      this.error(`Failed to process order ${job.data.id}: ${(err as Error).message}`);
       successful = false;
     }
 
@@ -88,72 +100,56 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
     };
   }
 
-  public async run(sync = true) {
-    const orderSyncKey = `order-relay:chain:${config.env.chainId}:lock`;
+  public async run() {
+    const orderRelayLock = `order-relay:chain:${config.env.chainId}:collection:${this.collectionAddress}:lock`;
     const lockDuration = 15_000;
+    let failedAttempts = 0;
 
-    /**
-     * start processing jobs from the queue
-     */
-    const runPromise = super._run().catch((err: Error) => {
-      logger.error('order-relay', `Order relay - Unexpected error: ${err.message}`);
-    });
+    while (failedAttempts < 5) {
+      try {
+        const lockPromise = this._redlock.using([orderRelayLock], lockDuration, async (signal) => {
+          this.log(`Acquired lock`);
+          failedAttempts = 0;
+          const promises = [];
+          const runPromise = super._run();
+          promises.push(runPromise);
 
-    if (sync) {
-      for (;;) {
-        try {
-          const syncPromise = this._redlock
-            .using([orderSyncKey], lockDuration, async (signal) => {
-              /**
-               * sync and maintain the orderbook
-               */
-              await this._sync(signal);
-            })
-            .catch((err) => {
-              if (err instanceof ExecutionError) {
-                logger.warn('order-relay', 'Failed to acquire lock, another instance is syncing');
-              } else {
-                throw err;
-              }
-            });
           /**
-           * wait for the lock to be released, or fail to acquire
+           * sync and maintain the orderbook
            */
-          await syncPromise;
-        } catch (err) {
-          logger.error('order-relay', `Order relay - Unexpected error: ${err}`);
+          const syncPromise = this._sync(signal);
+          promises.push(syncPromise);
+          const abortPromise = new Promise((resolve, reject) => {
+            signal.onabort = () => {
+              if (signal.error) {
+                reject(signal.error);
+              } else {
+                reject(new Error('Lock aborted'));
+              }
+            };
+          });
+          promises.push(abortPromise);
+          await Promise.all(promises);
+        });
+
+        await lockPromise;
+      } catch (err) {
+        failedAttempts += 1;
+        if (err instanceof ExecutionError) {
+          this.warn(`Failed to acquire lock, another instance is syncing. Attempt: ${failedAttempts}`);
+        } else {
+          this.error(`Unknown error occurred. Attempt: ${failedAttempts} ${JSON.stringify(err)}`);
         }
-        /**
-         * wait before trying to acquire the lock again
-         * - note this will cause all order relay instances
-         * with `sync=true` to attempt to repeatedly acquire the lock
-         */
         await sleep(lockDuration / 3);
       }
-    } else {
-      await runPromise;
-      return;
     }
-  }
 
-  async add(data: JobData | JobData[]): Promise<void> {
-    const arr = Array.isArray(data) ? data : [data];
-    const jobs: {
-      name: string;
-      data: JobData;
-      opts?: BulkJobOptions | undefined;
-    }[] = arr.map((item) => {
-      return {
-        name: item.id,
-        data: item
-      };
-    });
-    await this._queue.addBulk(jobs);
+    throw new Error('Failed to acquire lock after 5 attempts');
   }
 
   protected async _sync(signal: RedlockAbortSignal) {
     // to begin syncing we need to make sure we are the only instance syncing redis
-    const syncCursorKey = `order-relay:chain:${config.env.chainId}:order-events:sync-cursor`;
+    const syncCursorKey = `order-relay:chain:${config.env.chainId}:collection:${this.collectionAddress}:order-events:sync-cursor`;
     const encodedSyncCursor = await this._db.get(syncCursorKey);
 
     let syncCursor: OrderStatusEventSyncCursor | undefined;
@@ -173,8 +169,15 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
      * if we failed to find a cursor, load the most recent snapshot
      */
     if (!syncCursor) {
+      this._worker.concurrency = 15;
       ({ syncCursor } = await this._loadSnapshot(signal));
       await saveCursor(syncCursor);
+
+      while ((await this._queue.count()) > 500) {
+        await sleep(1000);
+      }
+
+      this._worker.concurrency = 1;
     }
 
     /**
@@ -225,6 +228,7 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
 
     const orderStatusEventsQuery = orderStatusEvents
       .where('chainId', '==', config.env.chainId)
+      .where('collection', '==', this.collectionAddress)
       .where('isMostRecent', '==', true)
       .orderBy('timestamp', 'asc')
       .orderBy('id', 'asc')
@@ -243,7 +247,10 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
         async (snapshot) => {
           try {
             this._checkSignal(signal);
-            logger.log('order-relay', `Received ${snapshot.docChanges().length} order status events`);
+            if (this._isClosing) {
+              throw new Error('Closing');
+            }
+            this.log(`Received ${snapshot.docChanges().length} order status events`);
 
             const eventsByType = snapshot.docChanges().reduce(
               (acc: Acc, item) => {
@@ -267,15 +274,14 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
 
             if (eventsByType.modified.length > 0) {
               const modifiedEvents = eventsByType.modified.map((item) => item.doc.ref.id).join(',');
-              logger.error(
-                'order-relay',
+              this.error(
                 `Received modified order status event. Expect most recent status events to be immutable. Ids: ${modifiedEvents}`
               );
             }
 
             const jobData = eventsByType.added.map((item) => {
               const data = item.doc.data();
-              logger.log('order-relay', `Received order status event for order ${data.orderId}`);
+              this.log(`Received order status event for order ${data.orderId}`);
               return {
                 id: data.orderId,
                 orderData: {
@@ -304,11 +310,14 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
             if (err instanceof ResourceLockedError || err instanceof ExecutionError) {
               cancel();
               return;
+            } else if (this._isClosing) {
+              cancel();
+              return;
             }
           }
         },
         (err) => {
-          logger.error('order-relay', `Order status event stream failed ${err.message}`);
+          this.error(`Order status event stream failed ${err.message}`);
           reject(err);
         }
       );
@@ -326,6 +335,7 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
 
     const orderStatusEventsQuery = orderStatusEvents
       .where('chainId', '==', config.env.chainId)
+      .where('collection', '==', this.collectionAddress)
       .where('isMostRecent', '==', true)
       .where('timestamp', '<=', syncUntil)
       .orderBy('timestamp', 'asc')
@@ -349,8 +359,10 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
     );
 
     let numEvents = 0;
+
+    let page = [];
     for await (const { data } of stream) {
-      await this.add({
+      page.push({
         id: data.orderId,
         orderData: {
           id: data.orderId,
@@ -363,9 +375,16 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
       });
 
       numEvents += 1;
-      if (numEvents % 300 === 0) {
+
+      if (page.length % 1000 === 0) {
+        await this.add(page);
+        page = [];
         yield { syncCursor: cursor, numEvents, complete: false };
       }
+    }
+    if (page.length > 0) {
+      await this.add(page);
+      page = [];
     }
 
     yield { syncCursor: cursor, numEvents, complete: true };
@@ -374,24 +393,40 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
   protected async _loadSnapshot(signal: RedlockAbortSignal): Promise<{ syncCursor: OrderStatusEventSyncCursor }> {
     const startTime = Date.now();
 
-    const { bucket, file, timestamp } = await this._getSnapshotMetadata();
+    const result = await this._getSnapshotMetadata();
 
     this._checkSignal(signal);
-    const orderIterator = this._getSnapshot({ bucket, file });
-    this.emit('snapshotLoading');
-
     let numOrders = 0;
-    for await (const item of orderIterator) {
-      // the snapshot is assumed to contain only active orders
-      await this.add({
-        id: item.id,
-        orderData: {
-          ...item,
-          status: 'active'
+    let timestamp = 0;
+    if (result) {
+      const { bucket, file, timestamp: snapshotTimestamp } = result;
+      timestamp = snapshotTimestamp;
+      const orderIterator = this._getSnapshot({ bucket, file });
+      this.emit('snapshotLoading');
+
+      let page: JobData[] = [];
+      for await (const item of orderIterator) {
+        // the snapshot is assumed to contain only active orders
+        page.push({
+          id: item.id,
+          orderData: {
+            ...item,
+            status: 'active'
+          }
+        });
+        numOrders += 1;
+        if (page.length % 1000 === 0) {
+          this._checkSignal(signal);
+          await this.add(page);
+          page = [];
         }
-      });
-      numOrders += 1;
-      this._checkSignal(signal);
+      }
+
+      if (page.length > 0) {
+        this._checkSignal(signal);
+        await this.add(page);
+        page = [];
+      }
     }
     const endLoadTime = Date.now();
     this.emit('snapshotLoaded', {
@@ -427,9 +462,9 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
         yield order;
       } catch (err) {
         if (err instanceof Error) {
-          logger.error(`order-relay`, `Error parsing order from snapshot: ${err.message}`);
+          this.error(`Error parsing order from snapshot: ${err.message}`);
         } else {
-          logger.error(`order-relay`, `Error parsing order from snapshot: ${err}`);
+          this.error(`Error parsing order from snapshot: ${err}`);
         }
       }
     }
@@ -441,13 +476,14 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
     }
   }
 
-  protected async _getSnapshotMetadata(): Promise<SnapshotMetadata> {
+  protected async _getSnapshotMetadata(): Promise<SnapshotMetadata | null> {
     const orderSnapshotsRef = this._firestore.collection(
       'orderSnapshots'
     ) as FirebaseFirestore.CollectionReference<SnapshotMetadata>;
 
     const mostRecentSnapshotQuery = orderSnapshotsRef
       .where('chainId', '==', config.env.chainId)
+      .where('collection', '==', this.collectionAddress)
       .orderBy('timestamp', 'desc')
       .limit(1);
 
@@ -456,7 +492,8 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
     const snapshotMetadata = snap.docs[0]?.data?.();
 
     if (!snapshotMetadata) {
-      throw new Error('No snapshot metadata found');
+      this.warn('No snapshot found');
+      return null;
     }
 
     return snapshotMetadata;

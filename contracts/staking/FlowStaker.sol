@@ -489,9 +489,7 @@ contract FlowStaker is Ownable, Pausable {
     }
 
     /// @dev Admin function to update Flow treasury
-    function updateFlowTreasury(
-        address _flowTreasury
-    ) external onlyOwner {
+    function updateFlowTreasury(address _flowTreasury) external onlyOwner {
         require(_flowTreasury != address(0), "invalid address");
         flowTreasury = _flowTreasury;
     }

@@ -1,7 +1,5 @@
 import Redis from 'ioredis';
 
-import { logger } from '@/common/logger';
-
 import { AbstractOrderbook } from '../orderbook/orderbook.abstract';
 import { AbstractProcess } from '../process/process.abstract';
 import { ProcessOptions, WithTiming } from '../process/types';
@@ -73,35 +71,29 @@ export abstract class AbstractOrderRelay<T, U, JobData extends { id: string }, J
   protected _registerListeners(verbose?: boolean): void {
     if (verbose) {
       this.on('snapshotLoading', () => {
-        logger.log('order-relay', 'Loading snapshot');
+        this.log('Loading snapshot');
       });
 
       this.on('snapshotLoaded', (args) => {
-        logger.log(
-          'order-relay',
-          `Loaded snapshot with ${args.numOrders} orders in ${args.timing.completed - args.timing.started}ms`
-        );
+        this.log(`Loaded snapshot with ${args.numOrders} orders in ${args.timing.completed - args.timing.started}ms`);
       });
 
       this.on('orderbookSyncing', () => {
-        logger.log('order-relay', 'Orderbook syncing initiated');
+        this.log('Orderbook syncing initiated');
       });
 
       this.on('orderbookSyncingProgress', (args) => {
-        logger.log(
-          'order-relay',
-          `Orderbook syncing... ${args.numEventsProcessed} events processed. ${args.percentComplete}% complete`
-        );
+        this.log(`Orderbook syncing... ${args.numEventsProcessed} events processed. ${args.percentComplete}% complete`);
       });
 
       this.on('orderbookSynced', (args) => {
-        logger.log(
-          'order-relay',
+        this.log(
           `Orderbook synced with ${args.numEventsProcessed} events in ${args.timing.completed - args.timing.started}ms`
         );
       });
     }
 
     this._registerWorkerListeners(verbose);
+    this._registerProcessListeners();
   }
 }

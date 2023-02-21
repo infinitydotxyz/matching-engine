@@ -1,5 +1,6 @@
 import { ethers } from 'ethers';
 import { parseEther, parseUnits } from 'ethers/lib/utils';
+import { getProcesses, startCollection } from 'start-collection';
 
 import { ChainId } from '@infinityxyz/lib/types/core';
 import { Common, Flow, Seaport } from '@reservoir0x/sdk';
@@ -7,7 +8,7 @@ import { Common, Flow, Seaport } from '@reservoir0x/sdk';
 import { JobData } from '@/lib/order-relay/v1/order-relay';
 
 import { logger } from './common/logger';
-import { getNetworkConfig } from './config';
+import { config, getNetworkConfig } from './config';
 
 export async function createMatch(chainId: ChainId) {
   const matches: { seaportJob: JobData; flowJob: JobData }[] = [];
@@ -121,3 +122,28 @@ export async function createMatch(chainId: ChainId) {
 
   return matches;
 }
+
+async function main() {
+  const chainId = config.env.chainId;
+  const network = await getNetworkConfig(chainId);
+  const matches = await createMatch(chainId);
+  if (!('test' in network) || !network.test) {
+    throw new Error('invalid network config');
+  }
+  const { orderRelay } = getProcesses(network.test.erc721.contract.address);
+
+  for (const match of matches) {
+    logger.log('create-matches', `creating match ${match.seaportJob.id} - ${match.flowJob.id}`);
+    await orderRelay.add([match.seaportJob, match.flowJob]);
+  }
+  logger.log('create-matches', 'Submitted matches');
+
+  await startCollection(network.test.erc721.contract.address).catch((err) => {
+    logger.error(
+      `create-matches`,
+      `Failed to start collection ${network.test.erc721.contract.address} ${JSON.stringify(err)}`
+    );
+  });
+}
+
+void main();
