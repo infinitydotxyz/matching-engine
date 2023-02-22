@@ -82,7 +82,8 @@ export async function createMatch(chainId: ChainId) {
           sourceOrder: seaportSellOrder.params,
           gasUsage: gasEstimate.toString(),
           status: 'active'
-        }
+        },
+        proposerInitiatedAt: Date.now()
       };
 
       const flowBuyOrder = orderBuilder.build({
@@ -111,7 +112,8 @@ export async function createMatch(chainId: ChainId) {
           sourceOrder: flowBuyOrder.getSignedOrder(),
           gasUsage: '0',
           status: 'active'
-        }
+        },
+        proposerInitiatedAt: Date.now()
       };
 
       matches.push({ seaportJob, flowJob });

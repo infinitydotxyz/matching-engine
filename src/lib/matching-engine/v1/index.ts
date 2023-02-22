@@ -23,7 +23,7 @@ export type MatchingEngineResult = {
   matches: { id: string; value: number }[];
 };
 
-export type MatchingEngineJob = { id: string; order: OB.Types.OrderParams };
+export type MatchingEngineJob = { id: string; order: OB.Types.OrderParams; proposerInitiatedAt: number };
 
 export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, MatchingEngineResult> {
   public readonly version: string;
@@ -52,7 +52,6 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
 
   async processJob(job: Job<MatchingEngineJob>): Promise<MatchingEngineResult> {
     const order = new OB.Order(job.data.order);
-    const matchTimestamp = Date.now();
     const matches = await this.matchOrder(order);
 
     const validMatches = await this.processMatches(order, matches);
@@ -95,21 +94,41 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
       }, new Map() as Map<string, DbMatch>);
 
       const pipeline = this._db.pipeline();
-
+      const matchTimestamp = Date.now();
       for (const [orderId, { matchIds }] of dbMatches.entries()) {
         const orderMatchesSet = this._storage.getOrderMatchesSet(orderId);
         const matchIdsArray = [...new Set(matchIds)];
         pipeline.sadd(orderMatchesSet, matchIdsArray);
 
-        const metadata: MatchOperationMetadata = {
-          timestamp: matchTimestamp,
-          validMatches: matchIdsArray.length,
-          matchLimit: this._MATCH_LIMIT,
-          side: order.id === orderId ? 'proposer' : 'recipient',
-          matchIds: matchIdsArray
-        };
-        pipeline.set(this._storage.getOrderMatchOperationMetadataKey(orderId), JSON.stringify(metadata));
+        let metadata: MatchOperationMetadata;
+        if (order.id !== orderId) {
+          metadata = {
+            validMatches: matchIdsArray.length,
+            matchLimit: this._MATCH_LIMIT,
+            side: 'recipient',
+            matchIds: matchIdsArray,
+            timing: {
+              proposerInitiatedAt: job.data.proposerInitiatedAt,
+              matchedAt: matchTimestamp,
+              matchDuration: matchTimestamp - job.data.proposerInitiatedAt
+            }
+          };
+          pipeline.set(this._storage.getOrderMatchOperationMetadataKey(orderId), JSON.stringify(metadata));
+        }
       }
+
+      const metadata: MatchOperationMetadata = {
+        validMatches: validMatches.length,
+        matchLimit: this._MATCH_LIMIT,
+        side: 'proposer',
+        matchIds: validMatches.map((match) => match.matchId),
+        timing: {
+          proposerInitiatedAt: job.data.proposerInitiatedAt,
+          matchedAt: matchTimestamp,
+          matchDuration: matchTimestamp - job.data.proposerInitiatedAt
+        }
+      };
+      pipeline.set(this._storage.getOrderMatchOperationMetadataKey(orderId), JSON.stringify(metadata));
 
       for (const match of validMatches) {
         const matchKey = this._storage.getFullMatchKey(match.matchId);

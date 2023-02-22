@@ -167,7 +167,7 @@ export default async function register(fastify: FastifyInstance, options: Fastif
       }
 
       const processes = getProcesses(collection);
-      await processes.matchingEngine.add({ id: orderId, order: orderParams });
+      await processes.matchingEngine.add({ id: orderId, order: orderParams, proposerInitiatedAt: Date.now() });
       await processes.matchingEngine.close();
       await processes.orderRelay.close();
 

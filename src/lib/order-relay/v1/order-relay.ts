@@ -33,6 +33,7 @@ export interface JobData {
    */
   id: string;
   orderData: OB.Types.OrderData;
+  proposerInitiatedAt: number;
 }
 
 type JobResult = WithTiming<{
@@ -80,7 +81,8 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
       if (job.data.orderData.status === 'active') {
         await this._matchingEngine.add({
           id: job.data.id,
-          order: orderParams
+          order: orderParams,
+          proposerInitiatedAt: job.data.proposerInitiatedAt
         });
       }
       successful = true;
@@ -291,7 +293,8 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
                   source: data.source,
                   sourceOrder: data.sourceOrder,
                   gasUsage: data.gasUsage
-                }
+                },
+                proposerInitiatedAt: data.timestamp
               };
             });
 
@@ -371,7 +374,8 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
           source: data.source,
           sourceOrder: data.sourceOrder,
           gasUsage: data.gasUsage
-        }
+        },
+        proposerInitiatedAt: data.timestamp
       });
 
       numEvents += 1;
@@ -412,7 +416,8 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
           orderData: {
             ...item,
             status: 'active'
-          }
+          },
+          proposerInitiatedAt: Date.now()
         });
         numOrders += 1;
         if (page.length % 1000 === 0) {
