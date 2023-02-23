@@ -102,19 +102,14 @@ export default async function register(fastify: FastifyInstance, options: Fastif
     const status = await orderbookStorage.getStatus(orderId);
     if (status !== 'not-found') {
       const metadata = await orderbookStorage.getOrderMatchOperationMetadata(orderId);
-      const response = await orderbookStorage.getOrderMatches(orderId);
       return {
         status,
-        numMatches: response.numMatches,
-        matches: response.matches,
         matchOperationMetadata: metadata ?? 'not-matched'
       };
     }
 
     return {
-      status,
-      numMatches: 0,
-      matches: []
+      status
     };
   });
 

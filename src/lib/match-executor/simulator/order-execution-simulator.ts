@@ -1,5 +1,7 @@
 import { BigNumber, BigNumberish } from 'ethers';
 
+import { ValidityResult } from '@/lib/utils/validity-result';
+
 import { MatchExecutionInfo, NativeMatchExecutionInfo } from '../match/types';
 import { ExecutionError, ExecutionErrorCode } from './error';
 import { Erc721Transfer, EthTransfer, ExecutionState, Transfer, TransferKind, WethTransfer } from './types';
@@ -38,7 +40,7 @@ export class OrderExecutionSimulator {
     this._currentState = this._clone(this._initialState);
   }
 
-  simulateMatch(execInfo: MatchExecutionInfo) {
+  simulateMatch(execInfo: MatchExecutionInfo): ValidityResult {
     const preSimulationState = this._clone(this._currentState);
 
     try {
@@ -57,7 +59,17 @@ export class OrderExecutionSimulator {
       return { isValid: true };
     } catch (err) {
       this._revert(preSimulationState);
-      return { isValid: false, error: err };
+      if (err instanceof ExecutionError) {
+        return { isValid: false, reason: err.message, isTransient: err.isTransient };
+      }
+      return {
+        isValid: false,
+        reason:
+          typeof err === 'object' && err && 'message' in err && typeof err.message === 'string'
+            ? err.message
+            : `${JSON.stringify(err)}`,
+        isTransient: true
+      };
     }
   }
 
@@ -72,7 +84,7 @@ export class OrderExecutionSimulator {
   protected _handleIds(orderIds: MatchExecutionInfo['orderIds']) {
     for (const orderId of orderIds) {
       if (this._currentState.executedOrders[orderId]) {
-        throw new ExecutionError(`Order ${orderId} has already been executed`, ExecutionErrorCode.OrderExecuted);
+        throw new ExecutionError(`Order ${orderId} has already been executed`, ExecutionErrorCode.OrderExecuted, true);
       }
 
       this._currentState.executedOrders[orderId] = true;
@@ -86,7 +98,8 @@ export class OrderExecutionSimulator {
         if (this._currentState.executedNonces[account]?.[nonce]) {
           throw new ExecutionError(
             `Nonce ${nonce} for account ${account} has already been executed`,
-            ExecutionErrorCode.NonceExecuted
+            ExecutionErrorCode.NonceExecuted,
+            true
           );
         }
 
@@ -114,12 +127,14 @@ export class OrderExecutionSimulator {
     if (!token) {
       throw new ExecutionError(
         `No ERC721 balance data for contract ${contract} token ${tokenId}`,
-        ExecutionErrorCode.NoBalanceData
+        ExecutionErrorCode.NoBalanceData,
+        true
       );
     } else if (token.owner !== from) {
       throw new ExecutionError(
         `ERC721 token ${tokenId} is not owned by ${from}`,
-        ExecutionErrorCode.InsufficientErc721Balance
+        ExecutionErrorCode.InsufficientErc721Balance,
+        true
       );
     }
 
@@ -158,14 +173,15 @@ export class OrderExecutionSimulator {
 
     const balance = getBalance(from);
     if (balance == null) {
-      throw new ExecutionError(`No WETH balance data for account ${from}`, ExecutionErrorCode.NoBalanceData);
+      throw new ExecutionError(`No WETH balance data for account ${from}`, ExecutionErrorCode.NoBalanceData, true);
     }
 
     const fromAccountBalance = BigNumber.from(balance);
     if (fromAccountBalance.lt(value)) {
       throw new ExecutionError(
         `WETH balance of ${from} is insufficient. Required ${value.toString()}. Balance: ${fromAccountBalance.toString()}`,
-        ExecutionErrorCode.InsufficientWethBalance
+        ExecutionErrorCode.InsufficientWethBalance,
+        true
       );
     }
 
@@ -175,14 +191,16 @@ export class OrderExecutionSimulator {
       if (allowance == null) {
         throw new ExecutionError(
           `No WETH allowance data for account ${from} and operator ${operator}`,
-          ExecutionErrorCode.NoBalanceData
+          ExecutionErrorCode.NoBalanceData,
+          true
         );
       }
       const accountAllowance = BigNumber.from(allowance ?? '0');
       if (accountAllowance.lt(value)) {
         throw new ExecutionError(
           `WETH allowance of ${from} for ${operator} is insufficient. Required ${value.toString()}. Allowance: ${allowance.toString()}`,
-          ExecutionErrorCode.InsufficientWethAllowance
+          ExecutionErrorCode.InsufficientWethAllowance,
+          true
         );
       }
 

@@ -8,7 +8,7 @@ export enum ExecutionErrorCode {
 }
 
 export class ExecutionError extends Error {
-  constructor(message: string, public readonly code: ExecutionErrorCode) {
+  constructor(message: string, public readonly code: ExecutionErrorCode, public readonly isTransient: boolean) {
     super(message);
   }
 }

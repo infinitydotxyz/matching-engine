@@ -5,7 +5,7 @@ import { getExchangeAddress, orderHash } from '@infinityxyz/lib/utils';
 import { Common } from '@reservoir0x/sdk';
 
 import { Block, BlockWithMaxFeePerGas } from '@/common/block';
-import { ValidityResult } from '@/lib/utils/validity-result';
+import { ValidityResultWithData } from '@/lib/utils/validity-result';
 
 import * as Flow from '../order/flow';
 import { Erc721Transfer, EthTransfer, TransferKind, WethTransfer } from '../simulator/types';
@@ -45,11 +45,12 @@ export class NativeMatch extends OrderMatch {
   async verifyMatchAtTarget(
     targetBlock: BlockWithMaxFeePerGas,
     currentBlock: Block
-  ): Promise<ValidityResult<{ native: NativeMatchExecutionInfo }>> {
+  ): Promise<ValidityResultWithData<{ native: NativeMatchExecutionInfo }>> {
     if (this._listing.isMatchExecutorOrder && this._offer.isMatchExecutorOrder) {
       return {
         isValid: false,
-        reason: 'Listing and offer are both match executor orders'
+        reason: 'Listing and offer are both match executor orders',
+        isTransient: false
       };
     }
 
@@ -59,72 +60,86 @@ export class NativeMatch extends OrderMatch {
     if (offer.signer === listing.signer) {
       return {
         isValid: false,
-        reason: 'Listing and offer have the same signer'
+        reason: 'Listing and offer have the same signer',
+        isTransient: false
       };
     } else if (!offer.sig) {
       return {
         isValid: false,
-        reason: 'Offer signature is missing'
+        reason: 'Offer signature is missing',
+        isTransient: false
       };
     } else if (!listing.sig) {
       return {
         isValid: false,
-        reason: 'Listing signature is missing'
+        reason: 'Listing signature is missing',
+        isTransient: false
       };
     } else if (offer.isSellOrder) {
       return {
         isValid: false,
-        reason: 'Offer is a sell order'
+        reason: 'Offer is a sell order',
+        isTransient: false
       };
     } else if (!listing.isSellOrder) {
       return {
         isValid: false,
-        reason: 'Listing is not a sell order'
+        reason: 'Listing is not a sell order',
+        isTransient: false
       };
     } else if (BigNumber.from(offer.extraParams).gt('0')) {
       return {
         isValid: false,
-        reason: 'Offer has extra params'
+        reason: 'Offer has extra params',
+        isTransient: false
       };
     } else if (BigNumber.from(listing.extraParams).gt('0')) {
       return {
         isValid: false,
-        reason: 'Listing has extra params'
+        reason: 'Listing has extra params',
+        isTransient: false
       };
     } else if (offer.execParams[1] !== listing.execParams[1]) {
       return {
         isValid: false,
-        reason: 'Listing and offer have different currencies'
+        reason: 'Listing and offer have different currencies',
+        isTransient: false
       };
     } else if (offer.execParams[0] !== listing.execParams[0]) {
       return {
         isValid: false,
-        reason: 'Listing and offer have different complications'
+        reason: 'Listing and offer have different complications',
+        isTransient: false
       };
     } else if (!BigNumber.from(offer.constraints[0]).eq(listing.constraints[0])) {
       return {
         isValid: false,
-        reason: 'Listing and offer have different num items'
+        reason: 'Listing and offer have different num items',
+        isTransient: false
       };
     } else if (!BigNumber.from(offer.constraints[0]).eq(1)) {
       return {
         isValid: false,
-        reason: 'Orders with num items > 1 are not supported' // TODO support orders with more than 1 item
+        reason: 'Orders with num items > 1 are not supported', // TODO support orders with more than 1 item
+        isTransient: false
       };
     } else if (BigNumber.from(offer.constraints[1]).lt(listing.constraints[1])) {
       return {
         isValid: false,
-        reason: 'Offer start price is less than listing start price' // TODO dynamic orders not supported
+        reason: 'Offer start price is less than listing start price', // TODO dynamic orders not supported
+        isTransient: false
       };
     } else if (BigNumber.from(offer.constraints[3]).gt(targetBlock.timestamp)) {
       return {
         isValid: false,
-        reason: 'Offer start time is in the future'
+        reason: 'Offer start time is in the future',
+        isTransient: true
       };
     } else if (BigNumber.from(listing.constraints[3]).gt(targetBlock.timestamp)) {
       return {
         isValid: false,
-        reason: 'Listing start time is in the future'
+        reason: 'Listing start time is in the future',
+        isTransient: true
       };
     } else if (
       BigNumber.from(offer.constraints[4]).lt(targetBlock.timestamp) &&
@@ -132,7 +147,8 @@ export class NativeMatch extends OrderMatch {
     ) {
       return {
         isValid: false,
-        reason: 'Offer end time is in the past'
+        reason: 'Offer end time is in the past',
+        isTransient: false
       };
     } else if (
       BigNumber.from(listing.constraints[4]).lt(targetBlock.timestamp) &&
@@ -140,12 +156,14 @@ export class NativeMatch extends OrderMatch {
     ) {
       return {
         isValid: false,
-        reason: 'Listing end time is in the past'
+        reason: 'Listing end time is in the past',
+        isTransient: false
       };
     } else if (BigNumber.from(offer.constraints[6]).lt(targetBlock.maxFeePerGas)) {
       return {
         isValid: false,
-        reason: 'Offer gas price is too low'
+        reason: 'Offer gas price is too low',
+        isTransient: true
       };
     }
 

@@ -6,11 +6,16 @@ import { logger } from '@/common/logger';
 import { Match } from '@/lib/match-executor/match/types';
 
 import { AbstractOrderbookStorage } from '../orderbook-storage.abstract';
+import { BlockStorage } from './block-storage';
 import { Order } from './order';
 import { OrderData } from './types';
 
 export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData> {
   public readonly version = 'v1';
+
+  /**
+   * ------ MATCHES ------
+   */
 
   /**
    * a set of all match ids for an order
@@ -42,6 +47,18 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
     return `orderbook:${this.version}:chain:${this._chainId}:order-matches:${matchId}:full`;
   }
 
+  /**
+   * ------ ORDERS ------
+   */
+
+  getOrderId(order: Order): string {
+    return order.id;
+  }
+
+  getFullOrderKey(id: string) {
+    return `orderbook:${this.version}:chain:${this._chainId}:orders:${id}:full`;
+  }
+
   get storedOrdersSetKey() {
     return `orderbook:${this.version}:chain:${this._chainId}:orders`;
   }
@@ -54,9 +71,9 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
     return `orderbook:${this.version}:chain:${this._chainId}:order-status:executed`;
   }
 
-  getOrderId(order: Order): string {
-    return order.id;
-  }
+  /**
+   * ------ COLLECTION/TOKEN ORDERS ------
+   */
 
   getTokenListingsSet(constraints: { complication: string; currency: string; collection: string; tokenId: string }) {
     const scope = 'token-orders';
@@ -78,10 +95,6 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
     return `scope:${scope}:complication:${constraints.complication}:side:${side}:collection:${constraints.collection}`;
   }
 
-  getFullOrderKey(id: string) {
-    return `orderbook:${this.version}:chain:${this._chainId}:orders:${id}:full`;
-  }
-
   getCollectionTokenOffersSet(constraints: {
     complication: string;
     currency: string;
@@ -100,8 +113,11 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
     return `scope:${scope}:complication:${constraints.complication}:side:${side}:collection:${constraints.collection}`;
   }
 
+  blockStorage: BlockStorage;
+
   constructor(protected _db: Redis, protected _chainId: ChainId) {
     super();
+    this.blockStorage = new BlockStorage(_db, _chainId);
   }
 
   async has(orderId: string): Promise<boolean> {
