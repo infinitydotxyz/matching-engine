@@ -3,15 +3,16 @@ import Redis from 'ioredis';
 import { ChainId } from '@infinityxyz/lib/types/core';
 
 import { ExecutionBlock } from '@/common/block';
+import { ExecutionOrder } from '@/common/execution-order';
 
-export class BlockStorage {
+export class ExecutionStorage {
   public readonly version = 'v1';
   /**
    * ------ ORDER EXECUTION STATUS ------
    */
 
   /**
-   * expiring key value pair of an order to a pending execution status
+   * key value pair of an order to a pending execution status
    */
   getPendingOrderExecutionKey(orderId: string) {
     return `block-storage:${this.version}:chain:${this._chainId}:order-execution:pending:${orderId}`;
@@ -55,6 +56,38 @@ export class BlockStorage {
       return JSON.parse(block ?? '') as ExecutionBlock;
     } catch (e) {
       return null;
+    }
+  }
+
+  async getOrderExecutionStatus(orderId: string): Promise<ExecutionOrder | null> {
+    const pending = this.getPendingOrderExecutionKey(orderId);
+    const notIncluded = this.getNotIncludedOrderExecutionKey(orderId);
+    const executed = this.getExecutedOrderExecutionKey(orderId);
+    const inexecutable = this.getInexecutableOrderExecutionKey(orderId);
+    const [pendingStatusEncoded, notIncludedStatusEncoded, executedStatusEncoded, inexecutableStatusEncoded] =
+      await this._db.mget(pending, notIncluded, executed, inexecutable);
+
+    const [pendingStatus, notIncludedStatus, executedStatus, inexecutableStatus] = [
+      pendingStatusEncoded,
+      notIncludedStatusEncoded,
+      executedStatusEncoded,
+      inexecutableStatusEncoded
+    ].map((status) => {
+      try {
+        return JSON.parse(status ?? '') as ExecutionOrder;
+      } catch (e) {
+        return null;
+      }
+    });
+
+    if (executedStatus) {
+      return executedStatus;
+    } else {
+      const mostRecent = [pendingStatus, notIncludedStatus, inexecutableStatus]
+        .sort((a, b) => (a?.block?.number ?? 0) - (b?.block?.number ?? 0))
+        .pop();
+
+      return mostRecent ?? null;
     }
   }
 }

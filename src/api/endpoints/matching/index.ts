@@ -1,5 +1,5 @@
 import { ethers } from 'ethers';
-import { FastifyInstance, FastifyPluginOptions } from 'fastify';
+import { FastifyInstance } from 'fastify';
 import { getOrderbook, getProcesses, startCollection } from 'start-collection';
 
 import { logger } from '@/common/logger';
@@ -7,7 +7,7 @@ import { config } from '@/config';
 
 const base = '/matching';
 
-export default async function register(fastify: FastifyInstance, options: FastifyPluginOptions) {
+export default async function register(fastify: FastifyInstance) {
   /**
    * get the status of the matching engine for a collection
    */
@@ -102,9 +102,33 @@ export default async function register(fastify: FastifyInstance, options: Fastif
     const status = await orderbookStorage.getStatus(orderId);
     if (status !== 'not-found') {
       const metadata = await orderbookStorage.getOrderMatchOperationMetadata(orderId);
+      if (metadata) {
+        const executionStatus = await orderbookStorage.executionStorage.getOrderExecutionStatus(orderId);
+        let status: 'executed' | 'executing' | 'waiting';
+        switch (executionStatus?.status) {
+          case 'executed':
+            status = 'executed';
+            break;
+          case 'pending':
+          case 'not-included':
+            status = 'executing';
+            break;
+          case 'inexecutable':
+          default:
+            status = 'waiting';
+            break;
+        }
+        return {
+          status,
+          matchStatus: 'matched',
+          matchOperationMetadata: metadata,
+          executionStatus: status,
+          executionInfo: executionStatus
+        };
+      }
       return {
         status,
-        matchOperationMetadata: metadata ?? 'not-matched'
+        matchStatus: 'pending'
       };
     }
 

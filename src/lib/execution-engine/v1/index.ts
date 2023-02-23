@@ -245,7 +245,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       reason: reason
     };
 
-    const skippedBlockKey = this._storage.blockStorage.getBlockKey(block.number);
+    const skippedBlockKey = this._storage.executionStorage.getBlockKey(block.number);
     keyValuePairs.push(skippedBlockKey, JSON.stringify(skippedBlock));
 
     const handledOrderIds = new Set<string>();
@@ -269,7 +269,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
               initiatedAt
             }
           };
-          const orderKey = this._storage.blockStorage.getInexecutableOrderExecutionKey(id);
+          const orderKey = this._storage.executionStorage.getInexecutableOrderExecutionKey(id);
           keyValuePairs.push(orderKey, JSON.stringify(inexecutableOrder));
         }
       }
@@ -330,7 +330,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
           ...balanceSimulationResult.data
         }
       };
-      const blockKey = this._storage.blockStorage.getBlockKey(block.number);
+      const blockKey = this._storage.executionStorage.getBlockKey(block.number);
       keyValuePairs.push(blockKey, JSON.stringify(executedBlock));
 
       for (const item of txnMatches) {
@@ -354,7 +354,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
                 receiptReceivedAt
               }
             };
-            const orderKey = this._storage.blockStorage.getExecutedOrderExecutionKey(id);
+            const orderKey = this._storage.executionStorage.getExecutedOrderExecutionKey(id);
             keyValuePairs.push(orderKey, JSON.stringify(executedOrder));
           }
         }
@@ -374,7 +374,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
           ...balanceSimulationResult.data
         }
       };
-      const blockKey = this._storage.blockStorage.getBlockKey(block.number);
+      const blockKey = this._storage.executionStorage.getBlockKey(block.number);
       keyValuePairs.push(blockKey, JSON.stringify(executedBlock));
 
       for (const item of txnMatches) {
@@ -396,7 +396,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
                 receiptReceivedAt
               }
             };
-            const orderKey = this._storage.blockStorage.getNotIncludedOrderExecutionKey(id);
+            const orderKey = this._storage.executionStorage.getNotIncludedOrderExecutionKey(id);
             keyValuePairs.push(orderKey, JSON.stringify(notIncludedOrder));
           }
         }
@@ -436,7 +436,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       numExecutableMatches: txnMatches.length,
       numInexecutableMatches: inexecutableMatches.length
     };
-    const blockKey = this._storage.blockStorage.getBlockKey(block.number);
+    const blockKey = this._storage.executionStorage.getBlockKey(block.number);
     keyValuePairs.push(blockKey, JSON.stringify(pendingBlock));
 
     /**
@@ -463,7 +463,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
               initiatedAt
             }
           };
-          const orderKey = this._storage.blockStorage.getPendingOrderExecutionKey(id);
+          const orderKey = this._storage.executionStorage.getPendingOrderExecutionKey(id);
           keyValuePairs.push(orderKey, JSON.stringify(pendingOrder));
         }
       }
@@ -488,7 +488,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
               initiatedAt
             }
           };
-          const orderKey = this._storage.blockStorage.getInexecutableOrderExecutionKey(id);
+          const orderKey = this._storage.executionStorage.getInexecutableOrderExecutionKey(id);
           keyValuePairs.push(orderKey, JSON.stringify(inexecutableOrder));
         }
       }

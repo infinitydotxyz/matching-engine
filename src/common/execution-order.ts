@@ -44,3 +44,9 @@ export interface ExecutedExecutionOrder extends BaseExecutionOrder {
     receiptReceivedAt: number;
   };
 }
+
+export type ExecutionOrder =
+  | PendingExecutionOrder
+  | InexecutableExecutionOrder
+  | NotIncludedExecutionOrder
+  | ExecutedExecutionOrder;

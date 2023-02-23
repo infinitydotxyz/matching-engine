@@ -2,11 +2,13 @@ import { Redis } from 'ioredis';
 
 import { ChainId } from '@infinityxyz/lib/types/core';
 
+import { ExecutionOrder } from '@/common/execution-order';
 import { logger } from '@/common/logger';
 import { Match } from '@/lib/match-executor/match/types';
+import { MatchOperationMetadata } from '@/lib/matching-engine/types';
 
 import { AbstractOrderbookStorage } from '../orderbook-storage.abstract';
-import { BlockStorage } from './block-storage';
+import { ExecutionStorage } from './execution-storage';
 import { Order } from './order';
 import { OrderData } from './types';
 
@@ -113,11 +115,11 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
     return `scope:${scope}:complication:${constraints.complication}:side:${side}:collection:${constraints.collection}`;
   }
 
-  blockStorage: BlockStorage;
+  executionStorage: ExecutionStorage;
 
   constructor(protected _db: Redis, protected _chainId: ChainId) {
     super();
-    this.blockStorage = new BlockStorage(_db, _chainId);
+    this.executionStorage = new ExecutionStorage(_db, _chainId);
   }
 
   async has(orderId: string): Promise<boolean> {
@@ -310,7 +312,7 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
     return 'active';
   }
 
-  async getOrderMatchOperationMetadata(id: string) {
+  async getOrderMatchOperationMetadata(id: string): Promise<MatchOperationMetadata | null> {
     const result = await this._db.get(this.getOrderMatchOperationMetadataKey(id));
     try {
       return JSON.parse(result ?? '');
