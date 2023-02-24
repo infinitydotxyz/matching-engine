@@ -57,6 +57,11 @@ export class NativeMatch extends OrderMatch {
     const offer = await this._offer.getChainOrder(this._listing.params, currentBlock.timestamp);
     const listing = await this._listing.getChainOrder(this._offer.params, currentBlock.timestamp);
 
+    const nativeLike = [
+      Common.Addresses.Eth[parseInt(this._chainId, 10)],
+      Common.Addresses.Weth[parseInt(this._chainId, 10)]
+    ];
+
     if (offer.signer === listing.signer) {
       return {
         isValid: false,
@@ -99,7 +104,10 @@ export class NativeMatch extends OrderMatch {
         reason: 'Listing has extra params',
         isTransient: false
       };
-    } else if (offer.execParams[1] !== listing.execParams[1]) {
+    } else if (
+      offer.execParams[1] !== listing.execParams[1] &&
+      !(nativeLike.includes(offer.execParams[1]) && nativeLike.includes(listing.execParams[1]))
+    ) {
       return {
         isValid: false,
         reason: 'Listing and offer have different currencies',
