@@ -256,7 +256,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     for (const item of inexecutableMatches) {
       const ids = [item.match.match.listing.id, item.match.match.offer.id];
       for (const id of ids) {
-        if (handledOrderIds.has(id)) {
+        if (!handledOrderIds.has(id)) {
           handledOrderIds.add(id);
           const matchedOrderId = ids.find((item) => item !== id) ?? '';
           const inexecutableOrder: InexecutableExecutionOrder = {
@@ -336,7 +336,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       for (const item of txnMatches) {
         const ids = [item.match.listing.id, item.match.offer.id];
         for (const id of ids) {
-          if (handledOrderIds.has(id)) {
+          if (!handledOrderIds.has(id)) {
             handledOrderIds.add(id);
             const matchedOrderId = ids.find((item) => item !== id);
             const executedOrder: ExecutedExecutionOrder = {
@@ -380,7 +380,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       for (const item of txnMatches) {
         const ids = [item.match.listing.id, item.match.offer.id];
         for (const id of ids) {
-          if (handledOrderIds.has(id)) {
+          if (!handledOrderIds.has(id)) {
             handledOrderIds.add(id);
             const matchedOrderId = ids.find((item) => item !== id);
             const notIncludedOrder: NotIncludedExecutionOrder = {
@@ -451,7 +451,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     for (const item of txnMatches) {
       const ids = [item.match.listing.id, item.match.offer.id];
       for (const id of ids) {
-        if (handledOrderIds.has(id)) {
+        if (!handledOrderIds.has(id)) {
           handledOrderIds.add(id);
           const matchedOrderId = ids.find((item) => item !== id) ?? '';
           const pendingOrder: PendingExecutionOrder = {
@@ -475,7 +475,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     for (const item of inexecutableMatches) {
       const ids = [item.match.match.listing.id, item.match.match.offer.id];
       for (const id of ids) {
-        if (handledOrderIds.has(id)) {
+        if (!handledOrderIds.has(id)) {
           handledOrderIds.add(id);
           const matchedOrderId = ids.find((item) => item !== id) ?? '';
           const inexecutableOrder: InexecutableExecutionOrder = {
