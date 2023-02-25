@@ -1,9 +1,9 @@
 import { ethers } from 'ethers';
 import { FastifyInstance } from 'fastify';
-import { getOrderbook, getProcesses, startCollection } from 'start-collection';
 
 import { logger } from '@/common/logger';
 import { config } from '@/config';
+import { getOrderbook, getProcesses, startCollection } from '@/lib/collections-queue/start-collection';
 
 const base = '/matching';
 

@@ -1,8 +1,9 @@
 import { FastifyInstance } from 'fastify';
-import { getExecutionEngine, startExecutionEngine } from 'start-execution-engine';
 
 import { logger } from '@/common/logger';
 import { config } from '@/config';
+
+import { getExecutionEngine, startExecutionEngine } from '../../../start-execution-engine';
 
 const base = '/execution';
 
