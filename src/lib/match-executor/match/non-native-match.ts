@@ -4,7 +4,7 @@ import { formatUnits } from 'ethers/lib/utils';
 import { ChainId, ChainNFTs } from '@infinityxyz/lib/types/core';
 
 import { Block, BlockWithMaxFeePerGas } from '@/common/block';
-import { ValidityResult } from '@/lib/utils/validity-result';
+import { ValidityResultWithData } from '@/lib/utils/validity-result';
 
 import { Seaport } from '../order';
 import * as Flow from '../order/flow';
@@ -56,7 +56,7 @@ export class NonNativeMatch extends OrderMatch {
   async verifyMatchAtTarget(
     targetBlock: BlockWithMaxFeePerGas,
     currentBlock: Block
-  ): Promise<ValidityResult<{ native: NativeMatchExecutionInfo; nonNative: NonNativeMatchExecutionInfo }>> {
+  ): Promise<ValidityResultWithData<{ native: NativeMatchExecutionInfo; nonNative: NonNativeMatchExecutionInfo }>> {
     const nativeResult = await this._nativeMatch.verifyMatchAtTarget(targetBlock, currentBlock);
 
     if (!nativeResult.isValid) {
@@ -66,7 +66,7 @@ export class NonNativeMatch extends OrderMatch {
     try {
       nonNativeExecInfo = await this._sourceOrder.getExecutionInfo(this._matchExecutorAddress);
     } catch (err) {
-      return { isValid: false, reason: err instanceof Error ? err.message : `${err}` };
+      return { isValid: false, reason: err instanceof Error ? err.message : `${err}`, isTransient: true };
     }
     return {
       isValid: true,

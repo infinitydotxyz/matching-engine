@@ -1,7 +1,7 @@
-import { getProcesses } from 'start-collection';
 import { startExecutionEngine } from 'start-execution-engine';
 
 import { config, getNetworkConfig } from '@/config';
+import { getProcesses } from '@/lib/collections-queue/start-collection';
 
 import { logger } from './common/logger';
 

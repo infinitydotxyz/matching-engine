@@ -1,12 +1,13 @@
-import { FastifyInstance, FastifyPluginOptions } from 'fastify';
-import { getExecutionEngine, startExecutionEngine } from 'start-execution-engine';
+import { FastifyInstance } from 'fastify';
 
 import { logger } from '@/common/logger';
 import { config } from '@/config';
 
+import { getExecutionEngine, startExecutionEngine } from '../../../start-execution-engine';
+
 const base = '/execution';
 
-export default async function register(fastify: FastifyInstance, options: FastifyPluginOptions) {
+export default async function register(fastify: FastifyInstance) {
   if (!config.components.api.readonly) {
     fastify.put(`${base}`, () => {
       startExecutionEngine().catch((err) => {

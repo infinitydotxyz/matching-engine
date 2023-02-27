@@ -1,13 +1,14 @@
 import { ethers } from 'ethers';
-import { FastifyInstance, FastifyPluginOptions } from 'fastify';
-import { getOrderbook, getProcesses, startCollection } from 'start-collection';
+import { FastifyInstance } from 'fastify';
+import PQueue from 'p-queue';
 
 import { logger } from '@/common/logger';
 import { config } from '@/config';
+import { getOrderbook, getProcesses, startCollection } from '@/lib/collections-queue/start-collection';
 
 const base = '/matching';
 
-export default async function register(fastify: FastifyInstance, options: FastifyPluginOptions) {
+export default async function register(fastify: FastifyInstance) {
   /**
    * get the status of the matching engine for a collection
    */
@@ -99,22 +100,35 @@ export default async function register(fastify: FastifyInstance, options: Fastif
 
     const { orderbookStorage } = getOrderbook();
 
-    const status = await orderbookStorage.getStatus(orderId);
-    if (status !== 'not-found') {
-      const metadata = await orderbookStorage.getOrderMatchOperationMetadata(orderId);
-      const response = await orderbookStorage.getOrderMatches(orderId);
-      return {
-        status,
-        numMatches: response.numMatches,
-        matches: response.matches,
-        matchOperationMetadata: metadata ?? 'not-matched'
-      };
+    const status = await orderbookStorage.getExecutionStatus(orderId, orderbookStorage);
+    return {
+      status
+    };
+  });
+
+  fastify.post(`${base}/orders`, async (request) => {
+    const orderIds =
+      typeof request.body == 'object' && request.body && 'orders' in request.body && Array.isArray(request.body.orders)
+        ? request.body.orders
+        : [];
+
+    for (const orderId of orderIds) {
+      if (typeof orderId !== 'string' || !ethers.utils.isHexString(orderId)) {
+        throw new Error('Invalid order hash');
+      }
     }
+    const { orderbookStorage } = getOrderbook();
+
+    const queue = new PQueue({ concurrency: 20 });
+
+    const statuses = orderIds.map(async (orderId: string) => {
+      return await queue.add(async () => {
+        return await orderbookStorage.getExecutionStatus(orderId, orderbookStorage);
+      });
+    });
 
     return {
-      status,
-      numMatches: 0,
-      matches: []
+      data: await Promise.all(statuses)
     };
   });
 
@@ -167,7 +181,7 @@ export default async function register(fastify: FastifyInstance, options: Fastif
       }
 
       const processes = getProcesses(collection);
-      await processes.matchingEngine.add({ id: orderId, order: orderParams });
+      await processes.matchingEngine.add({ id: orderId, order: orderParams, proposerInitiatedAt: Date.now() });
       await processes.matchingEngine.close();
       await processes.orderRelay.close();
 

@@ -1,5 +1,5 @@
 import { Block, BlockWithMaxFeePerGas } from '@/common/block';
-import { ValidityResult } from '@/lib/utils/validity-result';
+import { ValidityResultWithData } from '@/lib/utils/validity-result';
 
 import { Match, NativeMatchExecutionInfo, NonNativeMatchExecutionInfo } from './types';
 
@@ -30,7 +30,7 @@ export abstract class OrderMatch {
     targetBlock: BlockWithMaxFeePerGas,
     currentBlock: Block
   ): Promise<
-    ValidityResult<
+    ValidityResultWithData<
       | { native: NativeMatchExecutionInfo; nonNative: NonNativeMatchExecutionInfo }
       | { native: NativeMatchExecutionInfo }
     >

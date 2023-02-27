@@ -1,7 +1,11 @@
 interface BaseValidityResult {
   isValid: boolean;
 }
-export interface Valid<T> extends BaseValidityResult {
+
+export interface Valid extends BaseValidityResult {
+  isValid: true;
+}
+export interface ValidWithData<T> extends BaseValidityResult {
   isValid: true;
   data: T;
 }
@@ -9,6 +13,9 @@ export interface Valid<T> extends BaseValidityResult {
 export interface Invalid extends BaseValidityResult {
   isValid: false;
   reason: string;
+  isTransient: boolean;
 }
 
-export type ValidityResult<T> = Valid<T> | Invalid;
+export type ValidityResultWithData<T> = ValidWithData<T> | Invalid;
+
+export type ValidityResult = Valid | Invalid;

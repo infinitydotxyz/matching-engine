@@ -12,7 +12,21 @@ import { ChainId } from '@infinityxyz/lib/types/core';
 import { ONE_MIN } from '@infinityxyz/lib/utils';
 import { Common } from '@reservoir0x/sdk';
 
-import { Block, BlockWithGas, BlockWithMaxFeePerGas } from '@/common/block';
+import {
+  Block,
+  BlockWithGas,
+  BlockWithMaxFeePerGas,
+  ExecutedBlock,
+  NotIncludedBlock,
+  PendingExecutionBlock,
+  SkippedExecutionBlock
+} from '@/common/block';
+import {
+  ExecutedExecutionOrder,
+  InexecutableExecutionOrder,
+  NotIncludedExecutionOrder,
+  PendingExecutionOrder
+} from '@/common/execution-order';
 import { logger } from '@/common/logger';
 import { config } from '@/config';
 import { Broadcaster } from '@/lib/broadcaster/broadcaster.abstract';
@@ -27,7 +41,7 @@ import { Batch, ExternalFulfillments, MatchOrders } from '@/lib/match-executor/t
 import { OrderbookStorage } from '@/lib/orderbook/v1';
 import { AbstractProcess } from '@/lib/process/process.abstract';
 import { ProcessOptions } from '@/lib/process/types';
-import { Invalid, ValidityResult } from '@/lib/utils/validity-result';
+import { Invalid, ValidWithData, ValidityResultWithData } from '@/lib/utils/validity-result';
 
 export type ExecutionEngineJob = {
   id: string;
@@ -90,6 +104,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
   async processJob(job: Job<ExecutionEngineJob, unknown, string>): Promise<unknown> {
     const target = job.data.targetBlock;
     const current = job.data.currentBlock;
+    const initiatedAt = job.timestamp;
     try {
       if (target.timestamp < this._startTimestampSeconds) {
         logger.warn(
@@ -144,27 +159,33 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         `Block ${target.number}. Found ${sortedMatches.length} order matches before simulation.`
       );
 
-      const nonConflictingMatches = await this.simulate(sortedMatches, targetWithGas, current);
+      const { executable, inexecutable } = await this.simulate(sortedMatches, targetWithGas, current);
 
-      logger.log(
-        'execution-engine',
-        `Block ${target.number}. Found ${nonConflictingMatches.length} order matches after simulation.`
-      );
+      const txnMatches = executable.map((item) => item.match);
 
-      logger.log(
-        'execution-engine',
-        `Block ${target.number}. Valid matches: ${nonConflictingMatches.map((item) => item.id)}`
-      );
+      this.log(`Block ${target.number}. Found ${txnMatches.length} order matches after simulation.`);
+      this.log(`Block ${target.number}. Valid matches: ${txnMatches.map((item) => item.id)}`);
 
-      const txnData = await this._generateTxn(nonConflictingMatches, targetWithGas, current);
+      const { txn: txnData } = await this._generateTxn(txnMatches, targetWithGas, current);
 
       if (!txnData) {
-        logger.log('execution-engine', `Block ${target.number}. No matches found`);
+        this.log(`Block ${target.number}. No matches found`);
+        await this.saveSkippedBlock(targetWithGas, inexecutable, initiatedAt, 'No matches found');
         return;
       }
 
       logger.log('execution-engine', `Block ${target.number}. Simulating balance changes`);
-      await this.simulateBalanceChanges(txnData);
+      const balanceSimulationResult = await this.simulateBalanceChanges(txnData);
+      if (!balanceSimulationResult.isValid) {
+        await this.saveSkippedBlock(targetWithGas, inexecutable, initiatedAt, balanceSimulationResult.reason);
+        throw new Error(balanceSimulationResult.reason);
+      }
+
+      this.savePendingBlock(targetWithGas, txnMatches, inexecutable, balanceSimulationResult, initiatedAt).catch(
+        (err) => {
+          logger.error('execution-engine', `Failed to save pending block: ${err.message}`);
+        }
+      );
 
       logger.log('execution-engine', `Block ${target.number}. Txn generated.`);
 
@@ -176,7 +197,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
 
       if (receipt.status === 1) {
         const gasUsage = receipt.gasUsed.toString();
-        await this._savePendingMatches(nonConflictingMatches.map((item) => item.match));
+        await this._savePendingMatches(txnMatches.map((item) => item.match));
         logger.log(
           'execution-engine',
           `Block ${target.number}. Txn ${receipt.transactionHash} executed successfully. Gas used: ${gasUsage}`
@@ -188,9 +209,291 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
           `Block ${target.number}. Txn ${receipt.transactionHash} receipt: ${JSON.stringify(receipt, null, 2)}`
         );
       }
+
+      await this.saveBlockResult(
+        targetWithGas,
+        txnMatches,
+        inexecutable,
+        balanceSimulationResult,
+        initiatedAt,
+        receipt
+      );
     } catch (err) {
       logger.error('execution-engine', `failed to process job for block ${target.number} ${err}`);
     }
+  }
+
+  protected async saveSkippedBlock(
+    block: BlockWithGas,
+    inexecutableMatches: {
+      match: NativeMatch | NonNativeMatch;
+      verificationResult: Invalid;
+    }[],
+    initiatedAt: number,
+    reason: string
+  ) {
+    const keyValuePairs: string[] = [];
+
+    const skippedBlock: SkippedExecutionBlock = {
+      ...block,
+      numExecutableMatches: 0,
+      numInexecutableMatches: inexecutableMatches.length,
+      timing: {
+        initiatedAt
+      },
+      status: 'skipped',
+      reason: reason
+    };
+
+    const skippedBlockKey = this._storage.executionStorage.getBlockKey(block.number);
+    keyValuePairs.push(skippedBlockKey, JSON.stringify(skippedBlock));
+
+    const handledOrderIds = new Set<string>();
+
+    /**
+     * process inexecutable order statuses
+     */
+    for (const item of inexecutableMatches) {
+      const ids = [item.match.match.listing.id, item.match.match.offer.id];
+      for (const id of ids) {
+        if (!handledOrderIds.has(id)) {
+          handledOrderIds.add(id);
+          const matchedOrderId = ids.find((item) => item !== id) ?? '';
+          const inexecutableOrder: InexecutableExecutionOrder = {
+            status: 'inexecutable',
+            reason: item.verificationResult.reason,
+            matchId: item.match.id,
+            matchedOrderId: matchedOrderId,
+            block,
+            timing: {
+              initiatedAt
+            }
+          };
+          const orderKey = this._storage.executionStorage.getInexecutableOrderExecutionKey(id);
+          keyValuePairs.push(orderKey, JSON.stringify(inexecutableOrder));
+        }
+      }
+    }
+
+    await this._db.mset(keyValuePairs);
+  }
+
+  protected async saveBlockResult(
+    block: BlockWithGas,
+    txnMatches: (NativeMatch | NonNativeMatch)[],
+    inexecutableMatches: {
+      match: NativeMatch | NonNativeMatch;
+      verificationResult: Invalid;
+    }[],
+    balanceSimulationResult: ValidWithData<{
+      totalBalanceDiff: string;
+      ethBalanceDiff: string;
+      wethBalanceDiff: string;
+    }>,
+    initiatedAt: number,
+    receipt: ethers.providers.TransactionReceipt
+  ): Promise<void> {
+    // TODO export executed order + block data to firestore
+    const keyValuePairs: string[] = [];
+
+    const receiptReceivedAt = Date.now();
+
+    const effectiveGasPrice = receipt.effectiveGasPrice.toString();
+    const cumulativeGasUsed = receipt.cumulativeGasUsed.toString();
+    const gasUsed = receipt.gasUsed.toString();
+    const timing = {
+      initiatedAt: initiatedAt,
+      receiptReceivedAt
+    };
+
+    const handledOrderIds = new Set<string>();
+
+    if (receipt.status === 1) {
+      /**
+       * set the block status to executed
+       */
+      const blockData = await this._rpcProvider.getBlock(receipt.blockHash);
+      const executedBlock: ExecutedBlock = {
+        ...block,
+        status: 'executed',
+        effectiveGasPrice,
+        cumulativeGasUsed,
+        gasUsed,
+        txHash: receipt.transactionHash,
+        timing: {
+          ...timing,
+          blockTimestamp: blockData.timestamp
+        },
+        numExecutableMatches: txnMatches.length,
+        numInexecutableMatches: inexecutableMatches.length,
+        balanceChanges: {
+          ...balanceSimulationResult.data
+        }
+      };
+      const blockKey = this._storage.executionStorage.getBlockKey(block.number);
+      keyValuePairs.push(blockKey, JSON.stringify(executedBlock));
+
+      for (const item of txnMatches) {
+        const ids = [item.match.listing.id, item.match.offer.id];
+        for (const id of ids) {
+          if (!handledOrderIds.has(id)) {
+            handledOrderIds.add(id);
+            const matchedOrderId = ids.find((item) => item !== id);
+            const executedOrder: ExecutedExecutionOrder = {
+              block,
+              matchedOrderId: matchedOrderId ?? '',
+              matchId: item.id,
+              status: 'executed',
+              effectiveGasPrice,
+              cumulativeGasUsed,
+              gasUsed,
+              txHash: receipt.transactionHash,
+              timing: {
+                initiatedAt,
+                blockTimestamp: blockData.timestamp,
+                receiptReceivedAt
+              }
+            };
+            const orderKey = this._storage.executionStorage.getExecutedOrderExecutionKey(id);
+            keyValuePairs.push(orderKey, JSON.stringify(executedOrder));
+          }
+        }
+      }
+    } else {
+      const executedBlock: NotIncludedBlock = {
+        ...block,
+        status: 'not-included',
+        effectiveGasPrice,
+        cumulativeGasUsed,
+        gasUsed,
+        txHash: receipt.transactionHash,
+        timing,
+        numExecutableMatches: txnMatches.length,
+        numInexecutableMatches: inexecutableMatches.length,
+        balanceChanges: {
+          ...balanceSimulationResult.data
+        }
+      };
+      const blockKey = this._storage.executionStorage.getBlockKey(block.number);
+      keyValuePairs.push(blockKey, JSON.stringify(executedBlock));
+
+      for (const item of txnMatches) {
+        const ids = [item.match.listing.id, item.match.offer.id];
+        for (const id of ids) {
+          if (!handledOrderIds.has(id)) {
+            handledOrderIds.add(id);
+            const matchedOrderId = ids.find((item) => item !== id);
+            const notIncludedOrder: NotIncludedExecutionOrder = {
+              block,
+              matchedOrderId: matchedOrderId ?? '',
+              matchId: item.id,
+              status: 'not-included',
+              effectiveGasPrice,
+              cumulativeGasUsed,
+              gasUsed,
+              timing: {
+                initiatedAt,
+                receiptReceivedAt
+              }
+            };
+            const orderKey = this._storage.executionStorage.getNotIncludedOrderExecutionKey(id);
+            keyValuePairs.push(orderKey, JSON.stringify(notIncludedOrder));
+          }
+        }
+      }
+    }
+    await this._db.mset(keyValuePairs);
+  }
+
+  protected async savePendingBlock(
+    block: BlockWithGas,
+    txnMatches: (NativeMatch | NonNativeMatch)[],
+    inexecutableMatches: {
+      match: NativeMatch | NonNativeMatch;
+      verificationResult: Invalid;
+    }[],
+    balanceSimulationResult: ValidWithData<{
+      totalBalanceDiff: string;
+      ethBalanceDiff: string;
+      wethBalanceDiff: string;
+    }>,
+    initiatedAt: number
+  ): Promise<void> {
+    const keyValuePairs: string[] = [];
+
+    /**
+     * set the block status to pending
+     */
+    const pendingBlock: PendingExecutionBlock = {
+      ...block,
+      status: 'pending',
+      timing: {
+        initiatedAt
+      },
+      balanceChanges: {
+        ...balanceSimulationResult.data
+      },
+      numExecutableMatches: txnMatches.length,
+      numInexecutableMatches: inexecutableMatches.length
+    };
+    const blockKey = this._storage.executionStorage.getBlockKey(block.number);
+    keyValuePairs.push(blockKey, JSON.stringify(pendingBlock));
+
+    /**
+     * only save a status event for each order once
+     */
+    const handledOrderIds = new Set<string>();
+
+    /**
+     * process executable order statuses first
+     * so they get saved instead of any inexecutable conflicts
+     */
+    for (const item of txnMatches) {
+      const ids = [item.match.listing.id, item.match.offer.id];
+      for (const id of ids) {
+        if (!handledOrderIds.has(id)) {
+          handledOrderIds.add(id);
+          const matchedOrderId = ids.find((item) => item !== id) ?? '';
+          const pendingOrder: PendingExecutionOrder = {
+            status: 'pending',
+            matchId: item.match.matchId,
+            matchedOrderId: matchedOrderId,
+            block,
+            timing: {
+              initiatedAt
+            }
+          };
+          const orderKey = this._storage.executionStorage.getPendingOrderExecutionKey(id);
+          keyValuePairs.push(orderKey, JSON.stringify(pendingOrder));
+        }
+      }
+    }
+
+    /**
+     * process inexecutable order statuses
+     */
+    for (const item of inexecutableMatches) {
+      const ids = [item.match.match.listing.id, item.match.match.offer.id];
+      for (const id of ids) {
+        if (!handledOrderIds.has(id)) {
+          handledOrderIds.add(id);
+          const matchedOrderId = ids.find((item) => item !== id) ?? '';
+          const inexecutableOrder: InexecutableExecutionOrder = {
+            status: 'inexecutable',
+            reason: item.verificationResult.reason,
+            matchId: item.match.id,
+            matchedOrderId: matchedOrderId,
+            block,
+            timing: {
+              initiatedAt
+            }
+          };
+          const orderKey = this._storage.executionStorage.getInexecutableOrderExecutionKey(id);
+          keyValuePairs.push(orderKey, JSON.stringify(inexecutableOrder));
+        }
+      }
+    }
+    await this._db.mset(keyValuePairs);
   }
 
   protected async simulateBalanceChanges(txData: {
@@ -200,7 +503,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     maxPriorityFeePerGas: string;
     gasLimit: string;
     data: string;
-  }) {
+  }): Promise<ValidityResultWithData<{ totalBalanceDiff: string; ethBalanceDiff: string; wethBalanceDiff: string }>> {
     if (!config.env.isForkingEnabled) {
       const matchExecutor = this._matchExecutor.address;
       const weth = Common.Addresses.Weth[parseInt(this._chainId, 10)];
@@ -227,15 +530,35 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
 
       if (totalBalanceDiff.gte(0)) {
         logger.log('execution-engine', `Match executor received ${formatEther(totalBalanceDiff.toString())} ETH/WETH`);
-        return;
+        return {
+          data: {
+            totalBalanceDiff: totalBalanceDiff.toString(),
+            ethBalanceDiff: ethBalanceDiff.toString(),
+            wethBalanceDiff: wethBalanceDiff.toString()
+          },
+          isValid: true
+        };
       }
 
       logger.warn(
         'execution-engine',
         `Match executor lost ${formatEther(totalBalanceDiff.mul(-1).toString())} ETH/WETH. Tx ${JSON.stringify(txData)}`
       );
-      throw new Error('Match executor lost ETH/WETH');
+      return {
+        isValid: false,
+        reason: 'Match executor lost ETH/WETH',
+        isTransient: true
+      };
     }
+
+    return {
+      isValid: true,
+      data: {
+        totalBalanceDiff: BigNumber.from(0).toString(),
+        ethBalanceDiff: BigNumber.from(0).toString(),
+        wethBalanceDiff: BigNumber.from(0).toString()
+      }
+    };
   }
 
   protected async simulate(
@@ -246,8 +569,8 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     const results: {
       match: NativeMatch | NonNativeMatch;
       verificationResult:
-        | ValidityResult<{ native: NativeMatchExecutionInfo }>
-        | ValidityResult<{ native: NativeMatchExecutionInfo; nonNative: NonNativeMatchExecutionInfo }>;
+        | ValidityResultWithData<{ native: NativeMatchExecutionInfo }>
+        | ValidityResultWithData<{ native: NativeMatchExecutionInfo; nonNative: NonNativeMatchExecutionInfo }>;
     }[] = await Promise.all(
       matches.map(async (match) => {
         try {
@@ -257,7 +580,11 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
           logger.warn('execution-engine', `Failed to verify match ${match.id} ${err}`);
           return {
             match,
-            verificationResult: { isValid: false, reason: err instanceof Error ? err.message : `${err}` } as Invalid
+            verificationResult: {
+              isValid: false,
+              reason: err instanceof Error ? err.message : `${err}`,
+              isTransient: true
+            } as Invalid
           };
         }
       })
@@ -278,7 +605,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
 
     const initialState = await this._loadInitialState([...nonNativeTransfers, ...nativeTransfers], currentBlock.number);
 
-    return this._simulate(initialState, results).map((item) => item.match);
+    return this._simulate(initialState, results);
   }
 
   protected _simulate(
@@ -286,8 +613,8 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     matches: {
       match: NativeMatch | NonNativeMatch;
       verificationResult:
-        | ValidityResult<{ native: NativeMatchExecutionInfo }>
-        | ValidityResult<{ native: NativeMatchExecutionInfo; nonNative: NonNativeMatchExecutionInfo }>;
+        | ValidityResultWithData<{ native: NativeMatchExecutionInfo }>
+        | ValidityResultWithData<{ native: NativeMatchExecutionInfo; nonNative: NonNativeMatchExecutionInfo }>;
     }[]
   ) {
     const simulationMatches = matches.map(({ match, verificationResult }) => {
@@ -307,7 +634,8 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
           const res = simulator.simulateMatch(item.verificationResult.data.nonNative);
           if (!res.isValid) {
             item.isExecutable = false;
-            logger.log('execution-engine', `Match ${item.match.id} is not executable Reason: ${res.error}`);
+            item.verificationResult = res;
+            logger.log('execution-engine', `Match ${item.match.id} is not executable Reason: ${res.reason}`);
           }
         }
       }
@@ -318,7 +646,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         if (item.isExecutable && item.verificationResult.isValid) {
           const res = simulator.simulateMatch(item.verificationResult.data.native);
           if (!res.isValid) {
-            logger.log('execution-engine', `Match ${item.match.id} is not executable Reason: ${res.error}`);
+            logger.log('execution-engine', `Match ${item.match.id} is not executable Reason: ${res.reason}`);
             item.isExecutable = false;
             return { complete: false };
           }
@@ -334,9 +662,25 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       complete = res.complete;
     }
 
-    const results = simulationMatches.filter((item) => item.isExecutable);
+    const executable = simulationMatches.filter((item) => item.isExecutable) as {
+      match: NativeMatch | NonNativeMatch;
+      verificationResult:
+        | ValidWithData<{
+            native: NativeMatchExecutionInfo;
+          }>
+        | ValidWithData<{
+            native: NativeMatchExecutionInfo;
+            nonNative: NonNativeMatchExecutionInfo;
+          }>;
+      isExecutable: true;
+    }[];
+    const inexecutable = simulationMatches.filter((item) => !item.isExecutable) as {
+      match: NativeMatch | NonNativeMatch;
+      verificationResult: Invalid;
+      isExecutable: false;
+    }[];
 
-    return results;
+    return { executable, inexecutable };
   }
 
   protected async _loadInitialState(transfers: Transfer[], currentBlockNumber: number): Promise<ExecutionState> {
@@ -448,7 +792,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     currentBlock: Block
   ) {
     if (matches.length === 0) {
-      return null;
+      return { txn: null, isNative: false };
     }
 
     const nonNativeMatches = matches.filter((item) => !item.isNative) as NonNativeMatch[];
@@ -472,11 +816,11 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       };
       const txn = this._matchExecutor.getBrokerTxn(batch, targetBlock, 30_000_000);
 
-      return txn;
+      return { txn, isNative: false };
     } else {
       const txn = this._matchExecutor.getNativeTxn(matchOrders, targetBlock, 30_000_000);
 
-      return txn;
+      return { txn, isNative: true };
     }
   }
 
@@ -519,7 +863,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       'REV',
       'LIMIT',
       0,
-      10_000
+      1000
     );
 
     const fullMatchKeys = res.map(this._storage.getFullMatchKey.bind(this._storage));

@@ -108,7 +108,7 @@ export abstract class Order extends SourceOrder<ChainOBOrder> {
     timestamp: number;
     blockNumber: number;
     gasPrice: BigNumberish;
-  }): Promise<ValidityResult<undefined>> {
+  }): Promise<ValidityResult> {
     const isTimeValid =
       this.endTime === 0 || (targetBlock.timestamp > this.startTime && targetBlock.timestamp < this.endTime);
 
@@ -117,18 +117,19 @@ export abstract class Order extends SourceOrder<ChainOBOrder> {
     if (!isTimeValid) {
       return Promise.resolve({
         isValid: false,
-        reason: 'Order is times are not valid at the target block'
+        reason: 'Order times are not valid at the target block',
+        isTransient: true
       });
     } else if (!isGasPriceValid) {
       return Promise.resolve({
         isValid: false,
-        reason: 'Order gas price is not valid at the target block'
+        reason: 'Order gas price is not valid at the target block',
+        isTransient: true
       });
     }
 
     return Promise.resolve({
-      isValid: true,
-      data: undefined
+      isValid: true
     });
   }
 }

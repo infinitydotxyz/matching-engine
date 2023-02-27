@@ -1,10 +1,10 @@
 import { ethers } from 'ethers';
 import { parseEther, parseUnits } from 'ethers/lib/utils';
-import { getProcesses, startCollection } from 'start-collection';
 
 import { ChainId } from '@infinityxyz/lib/types/core';
 import { Common, Flow, Seaport } from '@reservoir0x/sdk';
 
+import { getProcesses, startCollection } from '@/lib/collections-queue/start-collection';
 import { JobData } from '@/lib/order-relay/v1/order-relay';
 
 import { logger } from './common/logger';
@@ -82,7 +82,8 @@ export async function createMatch(chainId: ChainId) {
           sourceOrder: seaportSellOrder.params,
           gasUsage: gasEstimate.toString(),
           status: 'active'
-        }
+        },
+        proposerInitiatedAt: Date.now()
       };
 
       const flowBuyOrder = orderBuilder.build({
@@ -111,7 +112,8 @@ export async function createMatch(chainId: ChainId) {
           sourceOrder: flowBuyOrder.getSignedOrder(),
           gasUsage: '0',
           status: 'active'
-        }
+        },
+        proposerInitiatedAt: Date.now()
       };
 
       matches.push({ seaportJob, flowJob });
