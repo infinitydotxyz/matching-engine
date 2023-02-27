@@ -83,6 +83,7 @@ export async function createMatch(chainId: ChainId) {
           gasUsage: gasEstimate.toString(),
           status: 'active'
         },
+        type: 'live' as const,
         proposerInitiatedAt: Date.now()
       };
 
@@ -113,6 +114,7 @@ export async function createMatch(chainId: ChainId) {
           gasUsage: '0',
           status: 'active'
         },
+        type: 'live' as const,
         proposerInitiatedAt: Date.now()
       };
 

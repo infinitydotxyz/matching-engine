@@ -39,7 +39,7 @@ export const getExecutionEngine = async () => {
     network.broadcaster,
     {
       debug: config.env.debug,
-      concurrency: network.isForkingEnabled ? 1 : 20, // ideally this is set high enough that we never max it out
+      concurrency: 20,
       enableMetrics: {
         maxDataPoints: MetricsTime.ONE_WEEK * 2
       }

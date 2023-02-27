@@ -6,6 +6,8 @@ import { logger } from '@/common/logger';
 import { config } from '@/config';
 import { getOrderbook, getProcesses, startCollection } from '@/lib/collections-queue/start-collection';
 
+import { getExecutionEngine } from '../../../start-execution-engine';
+
 const base = '/matching';
 
 export default async function register(fastify: FastifyInstance) {
@@ -27,6 +29,9 @@ export default async function register(fastify: FastifyInstance) {
     const collection = _collection.toLowerCase();
 
     const processes = getProcesses(collection);
+    const { executionEngine, nonceProvider } = await getExecutionEngine();
+    const jobsProcessing = await executionEngine.queue.count();
+    const jobCounts = await executionEngine.queue.getJobCounts();
 
     const matchingEngineJobsProcessing = await processes.matchingEngine.queue.count();
     const matchingEngineJobCounts = await processes.matchingEngine.queue.getJobCounts();
@@ -36,14 +41,17 @@ export default async function register(fastify: FastifyInstance) {
 
     const matchingEngineHealthPromise = processes.matchingEngine.checkHealth();
     const orderRelayHealthPromise = processes.orderRelay.checkHealth();
-
-    const [matchingEngineHealth, orderRelayHealth] = await Promise.all([
+    const executionEngineHealthPromise = executionEngine.checkHealth();
+    const [matchingEngineHealth, orderRelayHealth, executionEngineHealth] = await Promise.all([
       matchingEngineHealthPromise,
-      orderRelayHealthPromise
+      orderRelayHealthPromise,
+      executionEngineHealthPromise
     ]);
 
     await processes.matchingEngine.close();
     await processes.orderRelay.close();
+    nonceProvider.close();
+    await executionEngine.close();
 
     return {
       isSynced: orderRelayJobCounts.waiting < 500 && matchingEngineJobCounts.waiting < 500,
@@ -56,6 +64,11 @@ export default async function register(fastify: FastifyInstance) {
         healthStatus: orderRelayHealth,
         jobsProcessing: orderRelayJobsProcessing,
         jobCounts: orderRelayJobCounts
+      },
+      executionEngine: {
+        healthStatus: executionEngineHealth,
+        jobsProcessing: jobsProcessing,
+        jobCounts
       }
     };
   });

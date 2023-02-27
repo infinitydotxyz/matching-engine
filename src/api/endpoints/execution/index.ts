@@ -29,7 +29,7 @@ export default async function register(fastify: FastifyInstance) {
     await executionEngine.close();
 
     return {
-      matchingEngine: {
+      executionEngine: {
         healthStatus: healthCheck,
         jobsProcessing: jobsProcessing,
         jobCounts

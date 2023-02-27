@@ -33,6 +33,7 @@ export interface JobData {
    */
   id: string;
   orderData: OB.Types.OrderData;
+  type: 'backfill' | 'live';
   proposerInitiatedAt: number;
 }
 
@@ -82,7 +83,7 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
         await this._matchingEngine.add({
           id: job.data.id,
           order: orderParams,
-          proposerInitiatedAt: job.data.proposerInitiatedAt
+          proposerInitiatedAt: job.data.type === 'backfill' ? Date.now() : job.data.proposerInitiatedAt
         });
       }
       successful = true;
@@ -294,6 +295,7 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
                   sourceOrder: data.sourceOrder,
                   gasUsage: data.gasUsage
                 },
+                type: 'live' as const,
                 proposerInitiatedAt: data.timestamp
               };
             });
@@ -375,7 +377,8 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
           sourceOrder: data.sourceOrder,
           gasUsage: data.gasUsage
         },
-        proposerInitiatedAt: data.timestamp
+        type: 'backfill' as const,
+        proposerInitiatedAt: Date.now()
       });
 
       numEvents += 1;
@@ -417,6 +420,7 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
             ...item,
             status: 'active'
           },
+          type: 'backfill' as const,
           proposerInitiatedAt: Date.now()
         });
         numOrders += 1;

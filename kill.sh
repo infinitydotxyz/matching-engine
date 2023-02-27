@@ -1,0 +1,2 @@
+pgrep -f '/Users/admin/.nvm/versions/node/v18.12.1/bin/node --max-old-space-size=4096 -r dotenv/config -r module-alias/register /Users/admin/code/github.com/mavriklabs/matching-engine/node_modules/bullmq/dist/cjs/classes/master.js' | xargs kill -s KILL
+pgrep -f 'node --max-old-space-size=4096 -r dotenv/config -r module-alias/register ./dist/bootstrap.js' | xargs kill -s KILL
