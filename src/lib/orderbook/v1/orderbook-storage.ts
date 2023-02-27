@@ -1,8 +1,16 @@
 import { Redis } from 'ioredis';
 
-import { ChainId } from '@infinityxyz/lib/types/core';
+import {
+  ChainId,
+  ExecutionStatus,
+  ExecutionStatusMatchedExecuted,
+  ExecutionStatusMatchedInexecutable,
+  ExecutionStatusMatchedNoMatches,
+  ExecutionStatusMatchedNotIncluded,
+  ExecutionStatusMatchedPendingExecution,
+  ExecutionStatusNotFound
+} from '@infinityxyz/lib/types/core';
 
-import { ExecutionOrder } from '@/common/execution-order';
 import { logger } from '@/common/logger';
 import { Match } from '@/lib/match-executor/match/types';
 import { MatchOperationMetadata } from '@/lib/matching-engine/types';
@@ -318,6 +326,155 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
       return JSON.parse(result ?? '');
     } catch (err) {
       return null;
+    }
+  }
+
+  async getExecutionStatus(orderId: string, orderbookStorage: OrderbookStorage): Promise<ExecutionStatus> {
+    const matchOperationMetadata = await orderbookStorage.getOrderMatchOperationMetadata(orderId);
+    if (!matchOperationMetadata) {
+      const status = await orderbookStorage.getStatus(orderId);
+
+      switch (status) {
+        case 'not-found': {
+          const notFoundStatus: ExecutionStatusNotFound = {
+            id: orderId,
+            status: 'not-found'
+          };
+          return notFoundStatus;
+        }
+        case 'active': {
+          logger.warn('execution-status', `Order ${orderId} is active but has no match operation metadata`);
+          const notFoundStatus: ExecutionStatusNotFound = {
+            id: orderId,
+            status: 'not-found'
+          };
+          return notFoundStatus;
+        }
+        case 'executed': {
+          logger.warn('execution-status', `Order ${orderId} is executed but has no match operation metadata`);
+          const notFoundStatus: ExecutionStatusNotFound = {
+            id: orderId,
+            status: 'not-found'
+          };
+          return notFoundStatus;
+        }
+      }
+    }
+
+    if (matchOperationMetadata.validMatches === 0) {
+      const noMatchesStatus: ExecutionStatusMatchedNoMatches = {
+        id: orderId,
+        status: 'matched-no-matches',
+        matchInfo: {
+          side: matchOperationMetadata.side,
+          proposerInitiatedAt: matchOperationMetadata.timing.proposerInitiatedAt,
+          matchedAt: matchOperationMetadata.timing.matchedAt
+        }
+      };
+      return noMatchesStatus;
+    }
+
+    const executionStatus = await orderbookStorage.executionStorage.getOrderExecutionStatus(orderId);
+    if (!executionStatus) {
+      const pendingExecutionStatus: ExecutionStatusMatchedPendingExecution = {
+        id: orderId,
+        status: 'matched-pending-execution',
+        matchInfo: {
+          side: matchOperationMetadata.side,
+          proposerInitiatedAt: matchOperationMetadata.timing.proposerInitiatedAt,
+          matchedAt: matchOperationMetadata.timing.matchedAt
+        }
+      };
+      return pendingExecutionStatus;
+    }
+
+    switch (executionStatus.status) {
+      case 'pending': {
+        const pendingExecutionStatus: ExecutionStatusMatchedPendingExecution = {
+          id: orderId,
+          status: 'matched-pending-execution',
+          matchInfo: {
+            side: matchOperationMetadata.side,
+            proposerInitiatedAt: matchOperationMetadata.timing.proposerInitiatedAt,
+            matchedAt: matchOperationMetadata.timing.matchedAt
+          }
+        };
+        return pendingExecutionStatus;
+      }
+      case 'inexecutable': {
+        const inexecutableStatus: ExecutionStatusMatchedInexecutable = {
+          id: orderId,
+          status: 'matched-inexecutable',
+          matchInfo: {
+            side: matchOperationMetadata.side,
+            proposerInitiatedAt: matchOperationMetadata.timing.proposerInitiatedAt,
+            matchedAt: matchOperationMetadata.timing.matchedAt
+          },
+          executionInfo: {
+            reason: executionStatus.reason,
+            initiatedAt: executionStatus.timing.initiatedAt,
+            matchedOrderId: executionStatus.matchedOrderId,
+            matchId: executionStatus.matchId,
+            blockNumber: executionStatus.block.number,
+            baseFeePerGas: executionStatus.block.baseFeePerGas,
+            maxFeePerGas: executionStatus.block.maxFeePerGas,
+            maxPriorityFeePerGas: executionStatus.block.maxPriorityFeePerGas
+          }
+        };
+        return inexecutableStatus;
+      }
+      case 'not-included': {
+        const notIncludedStatus: ExecutionStatusMatchedNotIncluded = {
+          id: orderId,
+          status: 'matched-executing-not-included',
+          matchInfo: {
+            side: matchOperationMetadata.side,
+            proposerInitiatedAt: matchOperationMetadata.timing.proposerInitiatedAt,
+            matchedAt: matchOperationMetadata.timing.matchedAt
+          },
+          executionInfo: {
+            initiatedAt: executionStatus.timing.initiatedAt,
+            receiptReceivedAt: executionStatus.timing.receiptReceivedAt,
+            matchedOrderId: executionStatus.matchedOrderId,
+            matchId: executionStatus.matchId,
+            blockNumber: executionStatus.block.number,
+            baseFeePerGas: executionStatus.block.baseFeePerGas,
+            maxFeePerGas: executionStatus.block.maxFeePerGas,
+            maxPriorityFeePerGas: executionStatus.block.maxPriorityFeePerGas,
+            effectiveGasPrice: executionStatus.effectiveGasPrice,
+            gasUsed: executionStatus.gasUsed,
+            cumulativeGasUsed: executionStatus.cumulativeGasUsed
+          }
+        };
+        return notIncludedStatus;
+      }
+      case 'executed': {
+        const executedStatus: ExecutionStatusMatchedExecuted = {
+          id: orderId,
+          status: 'matched-executed',
+          matchInfo: {
+            side: matchOperationMetadata.side,
+            proposerInitiatedAt: matchOperationMetadata.timing.proposerInitiatedAt,
+            matchedAt: matchOperationMetadata.timing.matchedAt
+          },
+          executionInfo: {
+            initiatedAt: executionStatus.timing.initiatedAt,
+            receiptReceivedAt: executionStatus.timing.receiptReceivedAt,
+            matchedOrderId: executionStatus.matchedOrderId,
+            matchId: executionStatus.matchId,
+            blockNumber: executionStatus.block.number,
+            baseFeePerGas: executionStatus.block.baseFeePerGas,
+            maxFeePerGas: executionStatus.block.maxFeePerGas,
+            maxPriorityFeePerGas: executionStatus.block.maxPriorityFeePerGas,
+            effectiveGasPrice: executionStatus.effectiveGasPrice,
+            gasUsed: executionStatus.gasUsed,
+            cumulativeGasUsed: executionStatus.cumulativeGasUsed,
+            txHash: executionStatus.txHash,
+            blockTimestampSeconds: executionStatus.timing.blockTimestamp
+          }
+        };
+        return executedStatus;
+      }
     }
   }
 }

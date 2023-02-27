@@ -28,7 +28,7 @@
   "dependencies": {
     "@flashbots/ethers-provider-bundle": "^0.6.1",
     "@georgeroman/evm-tx-simulator": "^0.0.12",
-    "@infinityxyz/lib": "^1.326.2",
+    "@infinityxyz/lib": "^1.331.0",
     "@reservoir0x/sdk": "0.0.323",
     "bullmq": "^3.4.1",
     "dotenv": "^16.0.1",

@@ -58,6 +58,7 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
     const orderId = order.id;
 
     this.log(`found ${validMatches.length} valid matches for order ${order.id}`);
+    const matchTimestamp = Date.now();
     if (validMatches.length > 0) {
       type DbMatch = {
         otherOrderIds: string[];
@@ -94,7 +95,7 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
       }, new Map() as Map<string, DbMatch>);
 
       const pipeline = this._db.pipeline();
-      const matchTimestamp = Date.now();
+
       for (const [orderId, { matchIds }] of dbMatches.entries()) {
         const orderMatchesSet = this._storage.getOrderMatchesSet(orderId);
         const matchIdsArray = [...new Set(matchIds)];
@@ -145,6 +146,19 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
           }
         }
       }
+    } else {
+      const metadata: MatchOperationMetadata = {
+        validMatches: validMatches.length,
+        matchLimit: this._MATCH_LIMIT,
+        side: 'proposer',
+        matchIds: validMatches.map((match) => match.matchId),
+        timing: {
+          proposerInitiatedAt: job.data.proposerInitiatedAt,
+          matchedAt: matchTimestamp,
+          matchDuration: matchTimestamp - job.data.proposerInitiatedAt
+        }
+      };
+      await this._db.set(this._storage.getOrderMatchOperationMetadataKey(orderId), JSON.stringify(metadata));
     }
 
     return {

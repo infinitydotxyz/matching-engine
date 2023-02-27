@@ -1,5 +1,6 @@
 import { ethers } from 'ethers';
 import { FastifyInstance } from 'fastify';
+import PQueue from 'p-queue';
 
 import { logger } from '@/common/logger';
 import { config } from '@/config';
@@ -99,41 +100,35 @@ export default async function register(fastify: FastifyInstance) {
 
     const { orderbookStorage } = getOrderbook();
 
-    const status = await orderbookStorage.getStatus(orderId);
-    if (status !== 'not-found') {
-      const metadata = await orderbookStorage.getOrderMatchOperationMetadata(orderId);
-      if (metadata) {
-        const executionStatus = await orderbookStorage.executionStorage.getOrderExecutionStatus(orderId);
-        let status: 'executed' | 'executing' | 'waiting';
-        switch (executionStatus?.status) {
-          case 'executed':
-            status = 'executed';
-            break;
-          case 'pending':
-          case 'not-included':
-            status = 'executing';
-            break;
-          case 'inexecutable':
-          default:
-            status = 'waiting';
-            break;
-        }
-        return {
-          status,
-          matchStatus: 'matched',
-          matchOperationMetadata: metadata,
-          executionStatus: status,
-          executionInfo: executionStatus
-        };
-      }
-      return {
-        status,
-        matchStatus: 'pending'
-      };
-    }
-
+    const status = await orderbookStorage.getExecutionStatus(orderId, orderbookStorage);
     return {
       status
+    };
+  });
+
+  fastify.post(`${base}/orders`, async (request) => {
+    const orderIds =
+      typeof request.body == 'object' && request.body && 'orders' in request.body && Array.isArray(request.body.orders)
+        ? request.body.orders
+        : [];
+
+    for (const orderId of orderIds) {
+      if (typeof orderId !== 'string' || !ethers.utils.isHexString(orderId)) {
+        throw new Error('Invalid order hash');
+      }
+    }
+    const { orderbookStorage } = getOrderbook();
+
+    const queue = new PQueue({ concurrency: 20 });
+
+    const statuses = orderIds.map(async (orderId: string) => {
+      return await queue.add(async () => {
+        return await orderbookStorage.getExecutionStatus(orderId, orderbookStorage);
+      });
+    });
+
+    return {
+      data: await Promise.all(statuses)
     };
   });
 
