@@ -1,4 +1,4 @@
-import Fastify from 'fastify';
+import Fastify, { FastifyInstance, FastifyPluginOptions } from 'fastify';
 
 import { config } from '@/config';
 
@@ -11,13 +11,26 @@ const fastify = Fastify({
   ignoreDuplicateSlashes: true,
   logger: true
 });
+const auth = (instance: FastifyInstance, _opts: FastifyPluginOptions, next: () => void) => {
+  instance.addHook('onRequest', async (request, reply) => {
+    const { headers } = request;
+    const apiKey = headers['x-api-key'];
+    if (typeof apiKey === 'string') {
+      if (apiKey.toLowerCase() === config.components.api.apiKey) {
+        return;
+      }
+    }
+    await reply.code(401).send({ error: 'Unauthorized' });
+  });
+  next();
+};
 
 const register = async () => {
   if (config.components.executionEngine.enabled) {
-    await fastify.register(executionEngine);
+    await fastify.register(auth, executionEngine);
   }
   if (config.components.matchingEngine.enabled) {
-    await fastify.register(matchingEngine);
+    await fastify.register(auth, matchingEngine);
   }
 };
 

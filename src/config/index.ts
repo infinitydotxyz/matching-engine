@@ -36,11 +36,26 @@ const getMode = (): 'dev' | 'prod' => {
 };
 
 const isForkingEnabled = Number(getEnvVariable('ENABLE_FORKING', false)) === 1;
+
+const mode = getMode();
+const chainId = getEnvVariable('CHAIN_ID', true) as ChainId;
+
+const getChainName = (): 'mainnet' | 'goerli' => {
+  switch (chainId) {
+    case ChainId.Mainnet:
+      return 'mainnet';
+    case ChainId.Goerli:
+      return 'goerli';
+    default:
+      throw new Error(`Invalid chain id ${chainId}`);
+  }
+};
+
+const chainConfig = `.env.${getChainName()}.${mode}`;
+dotenv({ path: chainConfig, override: true });
 if (isForkingEnabled) {
   dotenv({ path: '.forked.env', override: true });
 }
-const mode = getMode();
-const chainId = getEnvVariable('CHAIN_ID', true) as ChainId;
 
 export const getNetworkConfig = async (chainId: ChainId) => {
   const chainIdInt = parseInt(chainId, 10);
@@ -129,7 +144,8 @@ export const config = {
     },
     api: {
       readonly: Number(getEnvVariable('API_READONLY', false)) === 1,
-      port: Number(getEnvVariable('PORT', false)) || 8080
+      port: Number(getEnvVariable('PORT', false)) || 8080,
+      apiKey: getEnvVariable('API_KEY', false).toLowerCase()
     }
   },
   broadcasting: {
@@ -137,7 +153,8 @@ export const config = {
     priorityFee: chainId === ChainId.Mainnet ? parseUnits('3', 'gwei') : parseUnits('0.01', 'gwei')
   },
   redis: {
-    connectionUrl: getEnvVariable('REDIS_URL')
+    connectionUrl: getEnvVariable('REDIS_URL'),
+    readConnectionUrl: getEnvVariable('READ_REDIS_URL')
   },
   firebase: {
     serviceAccount: mode === 'dev' ? devServiceAccount : prodServiceAccount
