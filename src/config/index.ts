@@ -35,6 +35,8 @@ const getMode = (): 'dev' | 'prod' => {
   throw new Error(`Invalid env mode ${env}`);
 };
 
+const isDeployed = Number(getEnvVariable('IS_DEPLOYED', false)) === 1;
+
 const isForkingEnabled = Number(getEnvVariable('ENABLE_FORKING', false)) === 1;
 
 const mode = getMode();
@@ -51,10 +53,12 @@ const getChainName = (): 'mainnet' | 'goerli' => {
   }
 };
 
-const chainConfig = `.env.${getChainName()}.${mode}`;
+const chainConfig = `.env.${mode}.${getChainName()}.${isDeployed ? 'deploy' : 'local'}`;
+logger.log('config', `Loading config from ${chainConfig}`);
 dotenv({ path: chainConfig, override: true });
 if (isForkingEnabled) {
   dotenv({ path: '.forked.env', override: true });
+  logger.log('config', `Loading forked config ${chainConfig}`);
 }
 
 export const getNetworkConfig = async (chainId: ChainId) => {
@@ -150,7 +154,7 @@ export const config = {
   },
   broadcasting: {
     blockOffset: 2,
-    priorityFee: chainId === ChainId.Mainnet ? parseUnits('3', 'gwei') : parseUnits('0.01', 'gwei')
+    priorityFee: parseUnits('3', 'gwei')
   },
   redis: {
     connectionUrl: getEnvVariable('REDIS_URL'),

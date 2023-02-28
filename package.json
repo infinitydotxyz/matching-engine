@@ -23,7 +23,10 @@
     "pre:push": "npm run format && npm run lint && npm run build",
     "test": "jest",
     "build:contracts": "forge build",
-    "create-match": "npx cross-env ENABLE_FORKING=1 ts-node -r dotenv/config ./src/create-match.ts"
+    "create-match": "npx cross-env ENABLE_FORKING=1 ts-node -r dotenv/config ./src/create-match.ts",
+    "deploy:prod:goerli:me": "npm run build && gcloud app deploy -q --appyaml=app.matching-engine.goerli.yaml --project=nftc-infinity",
+    "deploy:prod:goerli:ee": "npm run build && gcloud app deploy -q --appyaml=app.execution-engine.goerli.yaml --project=nftc-infinity",
+    "deploy:prod:goerli:api": "npm run build && gcloud app deploy -q --appyaml=app.api.goerli.yaml --project=nftc-infinity"
   },
   "dependencies": {
     "@flashbots/ethers-provider-bundle": "^0.6.1",
