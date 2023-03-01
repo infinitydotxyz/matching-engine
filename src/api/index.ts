@@ -9,7 +9,8 @@ const fastify = Fastify({
   jsonShorthand: false,
   ignoreTrailingSlash: true,
   ignoreDuplicateSlashes: true,
-  logger: true
+  logger: true,
+  trustProxy: true
 });
 const auth = (instance: FastifyInstance, _opts: FastifyPluginOptions, next: () => void) => {
   instance.addHook('onRequest', async (request, reply) => {
@@ -37,7 +38,7 @@ const register = async () => {
 const start = async () => {
   await register();
   try {
-    await fastify.listen({ port: config.components.api.port });
+    await fastify.listen({ port: config.components.api.port, host: '0.0.0.0' });
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);

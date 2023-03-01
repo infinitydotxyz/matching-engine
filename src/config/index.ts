@@ -8,8 +8,8 @@ import { getExchangeAddress } from '@infinityxyz/lib/utils';
 import { Erc721 } from '@reservoir0x/sdk/dist/common/helpers';
 
 import { logger } from '@/common/logger';
-import { ForkedNetworkBroadcaster } from '@/lib/broadcaster';
 import { FlashbotsBroadcaster } from '@/lib/broadcaster/flashbots-broadcaster';
+import { ForkedNetworkBroadcaster } from '@/lib/broadcaster/forked-network-broadcaster';
 
 import * as devServiceAccount from './creds/nftc-dev.json';
 import * as prodServiceAccount from './creds/nftc-prod.json';

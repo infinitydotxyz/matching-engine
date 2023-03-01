@@ -9,7 +9,7 @@
     "clean": "rimraf ./dist",
     "lint": "eslint . --ext .ts,.js",
     "format": "prettier -w ./src",
-    "start": "node --max-old-space-size=4096 -r dotenv/config -r module-alias/register ./dist/bootstrap.js",
+    "start": "node --max-old-space-size=4096 -r dotenv/config ./dist/bootstrap.js",
     "start:api:dev": "npm run build && npx cross-env ENABLE_FORKING=1 node --max-old-space-size=4096 -r dotenv/config -r module-alias/register ./dist/bootstrap.js",
     "start:forked": "npx cross-env ENABLE_FORKING=1 node -r dotenv/config -r module-alias/register ./dist/index.js",
     "start:dev": "npx cross-env ENABLE_FORKING=1 ts-node -r dotenv/config ./src/index.ts",

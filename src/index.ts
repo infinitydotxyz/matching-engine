@@ -1,9 +1,8 @@
-import { startExecutionEngine } from 'start-execution-engine';
-
 import { config, getNetworkConfig } from '@/config';
 import { getProcesses } from '@/lib/collections-queue/start-collection';
 
 import { logger } from './common/logger';
+import { startExecutionEngine } from './start-execution-engine';
 
 async function main() {
   const network = await getNetworkConfig(config.env.chainId);

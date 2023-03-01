@@ -42,10 +42,10 @@ tsconfig.tsbuildinfo
 .forked.env
 
 # Foundry 
-artifacts
-cache
-contracts
-lib
+./artifacts
+./contracts
+./cache
+./lib
 
 
 # Scripts
