@@ -173,13 +173,19 @@ export class OrderExecutionSimulator {
 
     const balance = getBalance(from);
     if (balance == null) {
-      throw new ExecutionError(`No WETH balance data for account ${from}`, ExecutionErrorCode.NoBalanceData, true);
+      throw new ExecutionError(
+        `No ${transfer.kind} balance data for account ${from}`,
+        ExecutionErrorCode.NoBalanceData,
+        true
+      );
     }
 
     const fromAccountBalance = BigNumber.from(balance);
     if (fromAccountBalance.lt(value)) {
       throw new ExecutionError(
-        `WETH balance of ${from} is insufficient. Required ${value.toString()}. Balance: ${fromAccountBalance.toString()}`,
+        `${
+          transfer.kind
+        } balance of ${from} is insufficient. Required ${value.toString()}. Balance: ${fromAccountBalance.toString()}`,
         ExecutionErrorCode.InsufficientWethBalance,
         true
       );
@@ -190,7 +196,7 @@ export class OrderExecutionSimulator {
       const allowance = this._currentState.wethBalances.allowances?.[from]?.[operator];
       if (allowance == null) {
         throw new ExecutionError(
-          `No WETH allowance data for account ${from} and operator ${operator}`,
+          `No ${transfer.kind} allowance data for account ${from} and operator ${operator}`,
           ExecutionErrorCode.NoBalanceData,
           true
         );
@@ -198,7 +204,9 @@ export class OrderExecutionSimulator {
       const accountAllowance = BigNumber.from(allowance ?? '0');
       if (accountAllowance.lt(value)) {
         throw new ExecutionError(
-          `WETH allowance of ${from} for ${operator} is insufficient. Required ${value.toString()}. Allowance: ${allowance.toString()}`,
+          `${
+            transfer.kind
+          } allowance of ${from} for ${operator} is insufficient. Required ${value.toString()}. Allowance: ${allowance.toString()}`,
           ExecutionErrorCode.InsufficientWethAllowance,
           true
         );

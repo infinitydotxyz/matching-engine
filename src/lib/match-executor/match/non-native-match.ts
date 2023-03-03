@@ -6,8 +6,9 @@ import { ChainId, ChainNFTs } from '@infinityxyz/lib/types/core';
 import { Block, BlockWithMaxFeePerGas } from '@/common/block';
 import { ValidityResultWithData } from '@/lib/utils/validity-result';
 
-import { Seaport } from '../order';
+import { NonNativeOrderFactory } from '../order';
 import * as Flow from '../order/flow';
+import { NonNativeOrder } from '../order/non-native-order';
 import { Call, MatchOrders } from '../types';
 import { NativeMatch } from './native-match';
 import { OrderMatch } from './order-match.abstract';
@@ -16,7 +17,7 @@ import { Match, NativeMatchExecutionInfo, NonNativeMatchExecutionInfo } from './
 export class NonNativeMatch extends OrderMatch {
   protected _nativeMatch: NativeMatch;
 
-  protected _sourceOrder: Seaport.SingleTokenOrder;
+  protected _sourceOrder: NonNativeOrder<unknown>;
   constructor(
     match: Match,
     protected _chainId: ChainId,
@@ -49,8 +50,10 @@ export class NonNativeMatch extends OrderMatch {
         order: nativeListing
       }
     };
+
+    const nonNativeOrderFactory = new NonNativeOrderFactory(this._chainId, this.provider);
     this._nativeMatch = new NativeMatch(nativeMatch, _chainId, orderFactory);
-    this._sourceOrder = new Seaport.SingleTokenOrder(nonNativeOrder, _chainId, provider);
+    this._sourceOrder = nonNativeOrderFactory.create(nonNativeOrder);
   }
 
   async verifyMatchAtTarget(

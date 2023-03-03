@@ -3,9 +3,8 @@ import { BigNumber, BigNumberish, ethers } from 'ethers';
 import { formatEther, formatUnits } from 'ethers/lib/utils';
 import Redis from 'ioredis';
 import PQueue from 'p-queue';
-import Redlock, { ExecutionError, RedlockAbortSignal } from 'redlock';
+import Redlock, { RedlockAbortSignal } from 'redlock';
 
-import { FlashbotsBundleProvider } from '@flashbots/ethers-provider-bundle';
 import { getCallTrace, parseCallTrace } from '@georgeroman/evm-tx-simulator';
 import { ERC20ABI, ERC721ABI } from '@infinityxyz/lib/abi';
 import { ChainId } from '@infinityxyz/lib/types/core';
@@ -75,30 +74,31 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
   }
 
   public async run(): Promise<void> {
-    const blockListenerLockKey = `execution-engine:chain:${config.env.chainId}:lock`;
-    const lockDuration = 15_000;
+    // const blockListenerLockKey = `execution-engine:chain:${config.env.chainId}:lock`;
+    // const lockDuration = 15_000;
     /**
      * start processing jobs from the queue
      */
     const runPromise = super._run().catch((err: Error) => {
       logger.error('execution-engine', ` Execution engine - Unexpected error: ${err.message}`);
     });
-    const listenPromise = this._redlock
-      .using([blockListenerLockKey], lockDuration, async (signal) => {
-        /**
-         * listen for blocks
-         */
-        await this._listen(signal);
-      })
-      .catch((err) => {
-        if (err instanceof ExecutionError) {
-          logger.warn('execution-engine', 'Failed to acquire lock, another instance is syncing');
-        } else {
-          throw err;
-        }
-      });
+    // const listenPromise = this._redlock
+    //   .using([blockListenerLockKey], lockDuration, async (signal) => {
+    //     /**
+    //      * listen for blocks
+    //      */
+    //     await this._listen(signal);
+    //   })
+    //   .catch((err) => {
+    //     if (err instanceof ExecutionError) {
+    //       logger.warn('execution-engine', 'Failed to acquire lock, another instance is syncing');
+    //     } else {
+    //       throw err;
+    //     }
+    //   });
 
-    await Promise.all([runPromise, listenPromise]);
+    // await Promise.all([runPromise, listenPromise]);
+    await runPromise;
   }
 
   async processJob(job: Job<ExecutionEngineJob, unknown, string>): Promise<unknown> {
@@ -605,6 +605,10 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
 
     const initialState = await this._loadInitialState([...nonNativeTransfers, ...nativeTransfers], currentBlock.number);
 
+    console.log(`Initial state: ${JSON.stringify(initialState, null, 2)}`);
+
+    console.log(`Transfers`);
+    console.log(JSON.stringify([...nonNativeTransfers, ...nativeTransfers], null, 2));
     return this._simulate(initialState, results);
   }
 
@@ -863,7 +867,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       'REV',
       'LIMIT',
       0,
-      1000
+      500
     );
 
     const fullMatchKeys = res.map(this._storage.getFullMatchKey.bind(this._storage));
@@ -902,68 +906,68 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     });
   }
 
-  protected async _listen(signal: RedlockAbortSignal) {
-    let cancel: (error: Error) => void = () => {
-      return;
-    };
+  // protected async _listen(signal: RedlockAbortSignal) {
+  //   let cancel: (error: Error) => void = () => {
+  //     return;
+  //   };
 
-    const handler = async (blockNumber: number) => {
-      logger.log('block-listener', `Received block ${blockNumber} at ${new Date().toISOString()}`);
+  //   const handler = async (blockNumber: number) => {
+  //     logger.log('block-listener', `Received block ${blockNumber} at ${new Date().toISOString()}`);
 
-      try {
-        this._checkSignal(signal);
-      } catch (err) {
-        if (err instanceof Error) {
-          cancel(err);
-        } else {
-          const errorMessage = `Block listener. Unexpected error: ${err}`;
-          cancel(new Error(errorMessage));
-        }
-        return;
-      }
+  //     try {
+  //       this._checkSignal(signal);
+  //     } catch (err) {
+  //       if (err instanceof Error) {
+  //         cancel(err);
+  //       } else {
+  //         const errorMessage = `Block listener. Unexpected error: ${err}`;
+  //         cancel(new Error(errorMessage));
+  //       }
+  //       return;
+  //     }
 
-      try {
-        const block = await this._rpcProvider.getBlock(blockNumber);
-        const baseFeePerGas = block.baseFeePerGas;
-        if (baseFeePerGas == null) {
-          throw new Error(`Block ${blockNumber} does not have baseFeePerGas`);
-        }
+  //     try {
+  //       const block = await this._rpcProvider.getBlock(blockNumber);
+  //       const baseFeePerGas = block.baseFeePerGas;
+  //       if (baseFeePerGas == null) {
+  //         throw new Error(`Block ${blockNumber} does not have baseFeePerGas`);
+  //       }
 
-        const job: ExecutionEngineJob = {
-          id: `${config.env.chainId}:${blockNumber}`,
-          currentBlock: {
-            number: blockNumber,
-            timestamp: block.timestamp,
-            baseFeePerGas: baseFeePerGas.toString()
-          },
-          targetBlock: {
-            number: blockNumber + this._blockOffset,
-            timestamp: block.timestamp + this._blockOffset * 13, // TODO this should be configured based on the chain
-            baseFeePerGas: FlashbotsBundleProvider.getMaxBaseFeeInFutureBlock(
-              baseFeePerGas,
-              this._blockOffset
-            ).toString()
-          }
-        };
+  //       const job: ExecutionEngineJob = {
+  //         id: `${config.env.chainId}:${blockNumber}`,
+  //         currentBlock: {
+  //           number: blockNumber,
+  //           timestamp: block.timestamp,
+  //           baseFeePerGas: baseFeePerGas.toString()
+  //         },
+  //         targetBlock: {
+  //           number: blockNumber + this._blockOffset,
+  //           timestamp: block.timestamp + this._blockOffset * 13, // TODO this should be configured based on the chain
+  //           baseFeePerGas: FlashbotsBundleProvider.getMaxBaseFeeInFutureBlock(
+  //             baseFeePerGas,
+  //             this._blockOffset
+  //           ).toString()
+  //         }
+  //       };
 
-        await this.add(job);
-      } catch (err) {
-        if (err instanceof Error) {
-          logger.error('execution-engine', `Unexpected error while handling block: ${blockNumber} ${err.message}`);
-        } else {
-          logger.error('execution-engine', `Unexpected error while handling block: ${blockNumber} ${err}`);
-        }
-      }
-    };
+  //       await this.add(job);
+  //     } catch (err) {
+  //       if (err instanceof Error) {
+  //         logger.error('execution-engine', `Unexpected error while handling block: ${blockNumber} ${err.message}`);
+  //       } else {
+  //         logger.error('execution-engine', `Unexpected error while handling block: ${blockNumber} ${err}`);
+  //       }
+  //     }
+  //   };
 
-    return new Promise((reject) => {
-      cancel = (err: Error) => {
-        this._websocketProvider.off('block', handler);
-        reject(err);
-      };
-      this._websocketProvider.on('block', handler);
-    });
-  }
+  //   return new Promise((reject) => {
+  //     cancel = (err: Error) => {
+  //       this._websocketProvider.off('block', handler);
+  //       reject(err);
+  //     };
+  //     this._websocketProvider.on('block', handler);
+  //   });
+  // }
 
   protected _checkSignal(signal: RedlockAbortSignal) {
     if (signal.aborted) {

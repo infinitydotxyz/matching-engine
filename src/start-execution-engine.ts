@@ -3,6 +3,7 @@ import { MetricsTime } from 'bullmq';
 import { firestore, redis, redlock } from './common/db';
 import { logger } from './common/logger';
 import { config, getNetworkConfig } from './config';
+import { BlockScheduler } from './lib/block-scheduler';
 import { ExecutionEngine } from './lib/execution-engine/v1';
 import { MatchExecutor } from './lib/match-executor/match-executor';
 import { NonceProvider } from './lib/match-executor/nonce-provider/nonce-provider';
@@ -49,23 +50,38 @@ export const getExecutionEngine = async () => {
   return {
     matchExecutor,
     executionEngine,
-    nonceProvider
+    nonceProvider,
+    network
   };
 };
 
 export const startExecutionEngine = async () => {
-  const { executionEngine, nonceProvider } = await getExecutionEngine();
+  const { executionEngine, nonceProvider, network } = await getExecutionEngine();
+  const blockScheduler = new BlockScheduler(
+    redis,
+    config.env.chainId,
+    [executionEngine],
+    network.websocketProvider,
+    network.httpProvider,
+    {
+      debug: config.env.debug,
+      concurrency: 2,
+      enableMetrics: false
+    }
+  );
   try {
     const nonceProviderPromise = nonceProvider.run();
     const executionEnginePromise = executionEngine.run();
+    const blockSchedulerPromise = blockScheduler.run();
 
-    await Promise.all([nonceProviderPromise, executionEnginePromise]);
+    await Promise.all([nonceProviderPromise, executionEnginePromise, blockSchedulerPromise]);
   } catch (err) {
     logger.error(`start-execution-engine`, `Failed to start execution engine ${JSON.stringify(err)}`);
 
     await executionEngine.close().catch((err) => {
       logger.error(`start-execution-engine`, `Failed to close execution engine ${JSON.stringify(err)}`);
     });
+    await blockScheduler.close();
     nonceProvider.close();
   }
 };
