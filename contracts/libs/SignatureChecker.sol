@@ -38,7 +38,7 @@ import { EIP2098_allButHighestBitMask,
 
 /**
  * @title SignatureChecker
- * @notice This library allows verification of signatures for both EOAs and contracts
+ * @notice This contract allows verification of signatures for both EOAs and contracts
  */
 contract SignatureChecker is LowLevelHelpers {
     /**

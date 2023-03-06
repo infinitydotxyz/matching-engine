@@ -77,7 +77,7 @@ contract FlowMatchExecutor is
         bytes32 message,
         bytes calldata signature
     ) external view override returns (bytes4) {
-        _assertValidSignatureHelper(owner(), message, signature);
+        _assertValidSignatureHelper(initiator, message, signature);
         return 0x1626ba7e; // EIP-1271 magic value
     }
 
