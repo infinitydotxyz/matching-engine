@@ -21,14 +21,14 @@ export const validateNetworkConfig = async (
     throw new Error(`Match executor mismatch - Config: ${matchExecutorAddress} Expected: ${exchangeMatchExec}`);
   }
 
-  const matchExecutorExchangeAddress = matchExecutor.exchange().then((address: string) => address.toLowerCase());
+  const matchExecutorExchangeAddress = await matchExecutor.exchange().then((address: string) => address.toLowerCase());
   if (exchangeAddress !== matchExecutorExchangeAddress) {
     throw new Error(
       `Match executor exchange mismatch - Config: ${exchangeAddress} Expected: ${matchExecutorExchangeAddress}`
     );
   }
 
-  const initiatorAddress = matchExecutor.initiator().then((address: string) => address.toLowerCase());
+  const initiatorAddress = await matchExecutor.initiator().then((address: string) => address.toLowerCase());
   if (network.initiator.address.toLowerCase() !== initiatorAddress) {
     throw new Error(
       `Initiator mismatch - Config: ${network.initiator.address.toLowerCase()} Expected: ${initiatorAddress}`
