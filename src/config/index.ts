@@ -154,7 +154,7 @@ export const config = {
   },
   broadcasting: {
     blockOffset: 2,
-    priorityFee: parseUnits('3', 'gwei')
+    priorityFee: parseUnits('3', 'gwei') // TODO set this programmatically
   },
   redis: {
     connectionUrl: getEnvVariable('REDIS_URL'),

@@ -1,5 +1,4 @@
 import { BigNumberish, ethers } from 'ethers';
-import { defaultAbiCoder, splitSignature } from 'ethers/lib/utils';
 
 import { ChainId, ChainOBOrder } from '@infinityxyz/lib/types/core';
 import { Flow } from '@reservoir0x/sdk';
@@ -27,7 +26,7 @@ export class MatchExecutorOrder extends Order {
     _provider: ethers.providers.StaticJsonRpcProvider,
     protected _nonceProvider: NonceProvider,
     protected _matchExecutorAddress: string,
-    protected _matchExecutorOwner: ethers.Wallet,
+    protected _matchExecutorInitiator: ethers.Wallet,
     protected _orderDurationSeconds: number
   ) {
     super(params, _chainId, _provider);
@@ -37,9 +36,9 @@ export class MatchExecutorOrder extends Order {
     this._contract = new ethers.Contract(
       this._matchExecutorAddress,
       MatchExecutorAbi,
-      this._matchExecutorOwner.provider
+      this._matchExecutorInitiator.provider
     );
-    this._contract.connect(this._matchExecutorOwner);
+    this._contract.connect(this._matchExecutorInitiator);
   }
 
   set startPrice(startPrice: BigNumberish) {
@@ -87,7 +86,8 @@ export class MatchExecutorOrder extends Order {
   }
 
   protected async _signOrder(_unsignedOrder: ChainOBOrder) {
-    const unsignedOrder = new Flow.Order(parseInt(this._chainId, 10), {
+    const chainId = parseInt(this._chainId, 10);
+    const unsignedOrder = new Flow.Order(chainId, {
       ..._unsignedOrder,
       constraints: _unsignedOrder.constraints.map((c) => c.toString())
     });
@@ -102,15 +102,8 @@ export class MatchExecutorOrder extends Order {
     unsignedOrder.nonce = nonce.toString();
     unsignedOrder.maxGasPrice = '0';
 
-    const { type, value, domain } = unsignedOrder.getSignatureData();
-    const signature = splitSignature(await this._matchExecutorOwner._signTypedData(domain, type, value));
-
-    const encodedSig = defaultAbiCoder.encode(['bytes32', 'bytes32', 'uint8'], [signature.r, signature.s, signature.v]);
-
-    const signedOrder: ChainOBOrder = {
-      ...value,
-      sig: encodedSig
-    };
+    await unsignedOrder.sign(this._matchExecutorInitiator, true);
+    const signedOrder = unsignedOrder.getSignedOrder();
 
     return signedOrder;
   }

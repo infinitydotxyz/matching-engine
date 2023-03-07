@@ -3,6 +3,7 @@ import { MetricsTime } from 'bullmq';
 import { firestore, redis, redlock } from './common/db';
 import { logger } from './common/logger';
 import { config, getNetworkConfig } from './config';
+import { validateNetworkConfig } from './config/validate-network';
 import { BlockScheduler } from './lib/block-scheduler';
 import { ExecutionEngine } from './lib/execution-engine/v1';
 import { MatchExecutor } from './lib/match-executor/match-executor';
@@ -10,7 +11,7 @@ import { NonceProvider } from './lib/match-executor/nonce-provider/nonce-provide
 import { OrderbookV1 } from './lib/orderbook';
 
 export const getExecutionEngine = async () => {
-  const network = await getNetworkConfig(config.env.chainId);
+  const network = await validateNetworkConfig(getNetworkConfig(config.env.chainId));
   const orderbookStorage = new OrderbookV1.OrderbookStorage(redis, config.env.chainId);
   const nonceProvider = new NonceProvider(
     config.env.chainId,

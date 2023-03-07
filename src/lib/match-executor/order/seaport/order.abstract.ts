@@ -36,8 +36,7 @@ export abstract class SeaportOrder extends NonNativeOrder<Seaport.Types.OrderCom
     const call: Call = {
       to: txn.to,
       data: txn.data,
-      value: value.toString(),
-      isPayable: value.gt(0)
+      value: value.toString()
     };
 
     return Promise.resolve({ call, nftsToTransfer: this._orderData.order.nfts });

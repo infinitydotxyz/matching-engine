@@ -144,7 +144,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         this._rpcProvider,
         this._matchExecutor.nonceProvider,
         this._matchExecutor.address,
-        this._matchExecutor.owner,
+        this._matchExecutor.initiator,
         orderDurationSeconds
       );
       const sortedMatches = this._sortMatches(nonPendingMatches).map((item) => {
@@ -192,7 +192,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       const { receipt } = await this._broadcaster.broadcast(txnData, {
         targetBlock: targetWithGas,
         currentBlock: current,
-        signer: this._matchExecutor.owner
+        signer: this._matchExecutor.initiator
       });
 
       if (receipt.status === 1) {
@@ -517,8 +517,27 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
           gas: txData.gasLimit,
           gasPrice: txData.maxFeePerGas
         },
-        this._rpcProvider
+        this._rpcProvider,
+        {
+          skipReverts: true
+        }
       );
+
+      if ('error' in trace && trace.error) {
+        const error = trace.error;
+        console.log(`Error while simulating balance changes`);
+        console.log(JSON.stringify(error, null, 2));
+        const state = parseCallTrace(trace);
+
+        console.log(`State after call trace`);
+        console.log(JSON.stringify(state, null, 2));
+
+        return {
+          isValid: false,
+          reason: 'transaction reverted',
+          isTransient: false
+        };
+      }
 
       const finalState = parseCallTrace(trace);
 
@@ -818,10 +837,13 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         externalFulfillments,
         matches: matchOrders
       };
+
+      console.log('batch', JSON.stringify(batch, null, 2));
       const txn = this._matchExecutor.getBrokerTxn(batch, targetBlock, 30_000_000);
 
       return { txn, isNative: false };
     } else {
+      console.log('Native txn', JSON.stringify(matchOrders, null, 2));
       const txn = this._matchExecutor.getNativeTxn(matchOrders, targetBlock, 30_000_000);
 
       return { txn, isNative: true };

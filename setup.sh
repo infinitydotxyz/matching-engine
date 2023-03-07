@@ -34,7 +34,7 @@ cast send $WETH "deposit()" --value 1ether --private-key $TEST > /dev/null
 
 echo "Deploying match executor..."
 _MATCH_EXEC_OUTPUT="_match_executor_deploy.txt"
-forge create --constructor-args "$EXCHANGE" "$INITIATOR_ADDR" --private-key $INITIATOR contracts/core/FlowMatchExecutor.sol:FlowMatchExecutor > $_MATCH_EXEC_OUTPUT
+forge create --constructor-args "$EXCHANGE" "$INITIATOR_ADDR" "$WETH" --private-key $INITIATOR contracts/core/FlowMatchExecutor.sol:FlowMatchExecutor > $_MATCH_EXEC_OUTPUT
 MATCH_EXECUTOR=`grep "Deployed to:" $_MATCH_EXEC_OUTPUT | cut -d ':' -f 2`
 echo "Match executor deployed to $MATCH_EXECUTOR"
 rm $_MATCH_EXEC_OUTPUT
@@ -45,12 +45,6 @@ echo "Updating match executor..."
 cast send $EXCHANGE_OWNER --value 1ether --private-key $ACCOUNT_4 > /dev/null
 cast send $EXCHANGE "updateMatchExecutor(address)" $MATCH_EXECUTOR --from $EXCHANGE_OWNER --gas-limit 30000000 > /dev/null
 echo "Updated match executor"
-
-# Enable exchanges
-echo "Enabling exchanges..."
-cast send $MATCH_EXECUTOR "addEnabledExchange(address)" $EXCHANGE --private-key $INITIATOR > /dev/null
-cast send $MATCH_EXECUTOR "addEnabledExchange(address)" $SEAPORT --private-key $INITIATOR > /dev/null
-echo "Enabled exchanges"
 
 echo "Funding match executor..."
 cast send $MATCH_EXECUTOR --value 100ether --private-key $ACCOUNT_7 > /dev/null
