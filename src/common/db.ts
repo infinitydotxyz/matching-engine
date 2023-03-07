@@ -4,7 +4,8 @@ import Redlock from 'redlock';
 
 import { config } from '@/config';
 
-const connectionUrl = config.components.api.readonly ? config.redis.readConnectionUrl : config.redis.connectionUrl;
+// const connectionUrl = config.components.api.readonly ? config.redis.readConnectionUrl : config.redis.connectionUrl;
+const connectionUrl = config.redis.connectionUrl;
 
 export const redis = new Redis(connectionUrl, {
   maxRetriesPerRequest: null,
