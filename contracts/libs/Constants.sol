@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.14;
+pragma solidity 0.8.14;
 
 uint256 constant FreeMemoryPointerSlot = 0x40;
 uint256 constant OneWord = 0x20;

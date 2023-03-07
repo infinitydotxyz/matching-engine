@@ -15,7 +15,6 @@ library FlowMatchExecutorTypes {
         bytes data;
         uint256 value;
         address payable to;
-        bool isPayable;
     }
 
     struct ExternalFulfillments {

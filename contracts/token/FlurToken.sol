@@ -8,13 +8,13 @@ import { ERC20Snapshot } from "@openzeppelin/contracts/token/ERC20/extensions/ER
 import { ERC20Votes } from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Votes.sol";
 
 /**
- * @title FlowTokens
+ * @title FlurTokens
  * @author nneverlander. Twitter @nneverlander
- * @notice The Flow Token ($FLOW).
+ * @notice The Flur Token ($FLUR).
  */
-contract FlowToken is
-    ERC20("Flow", "FLOW"),
-    ERC20Permit("Flow"),
+contract FlurToken is
+    ERC20("Flur", "FLUR"),
+    ERC20Permit("Flur"),
     ERC20Burnable,
     ERC20Snapshot,
     ERC20Votes
