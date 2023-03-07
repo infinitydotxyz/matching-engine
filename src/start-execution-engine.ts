@@ -12,7 +12,7 @@ import { OrderbookV1 } from './lib/orderbook';
 
 export const getExecutionEngine = async () => {
   const network = await validateNetworkConfig(getNetworkConfig(config.env.chainId));
-  const orderbookStorage = new OrderbookV1.OrderbookStorage(redis, config.env.chainId);
+  const orderbookStorage = new OrderbookV1.OrderbookStorage(redis, firestore, config.env.chainId);
   const nonceProvider = new NonceProvider(
     config.env.chainId,
     network.initiator.address,

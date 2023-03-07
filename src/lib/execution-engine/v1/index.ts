@@ -275,7 +275,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     initiatedAt: number,
     receipt: ethers.providers.TransactionReceipt
   ): Promise<void> {
-    // TODO export executed order + block data to firestore
+    // TODO export block data to firestore
     const keyValuePairs: string[] = [];
 
     const receiptReceivedAt = Date.now();
@@ -289,6 +289,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     };
 
     const handledOrderIds = new Set<string>();
+    const executedOrders: string[] = [];
 
     if (receipt.status === 1) {
       /**
@@ -338,6 +339,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
             };
             const orderKey = this._storage.executionStorage.getExecutedOrderExecutionKey(id);
             keyValuePairs.push(orderKey, JSON.stringify(executedOrder));
+            executedOrders.push(id);
           }
         }
       }
@@ -385,6 +387,9 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       }
     }
     await this._db.mset(keyValuePairs);
+    if (executedOrders.length > 0 && !this._broadcaster.isForked) {
+      await this._storage.executionStorage.saveExecutedOrders(executedOrders);
+    }
   }
 
   protected async savePendingBlock(

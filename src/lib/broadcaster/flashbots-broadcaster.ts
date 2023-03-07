@@ -22,6 +22,8 @@ export class FlashbotsBroadcaster extends Broadcaster<Options> {
     return this._options.flashbotsProvider;
   }
 
+  isForked = false;
+
   protected get _authSigner() {
     return this._options.authSigner;
   }

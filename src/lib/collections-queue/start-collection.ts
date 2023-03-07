@@ -11,7 +11,7 @@ import { OrderbookV1 } from '../orderbook';
 import { JobData, JobResult, getCollectionsQueue } from './start-collections-queue';
 
 export const getOrderbook = () => {
-  const orderbookStorage = new OrderbookV1.OrderbookStorage(redis, config.env.chainId);
+  const orderbookStorage = new OrderbookV1.OrderbookStorage(redis, firestore, config.env.chainId);
   const complication = getOBComplicationAddress(config.env.chainId);
   const orderbook = new OrderbookV1.Orderbook(orderbookStorage, new Set([complication]));
 

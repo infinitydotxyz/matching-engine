@@ -1,9 +1,12 @@
 import Redis from 'ioredis';
 
-import { ChainId } from '@infinityxyz/lib/types/core';
+import { ChainId, ExecutionStatusMatchedExecuted } from '@infinityxyz/lib/types/core';
 
 import { ExecutionBlock } from '@/common/block';
 import { ExecutionOrder } from '@/common/execution-order';
+import { BatchHandler } from '@/lib/firestore/batch-handler';
+
+import { OrderbookStorage } from './orderbook-storage';
 
 export class ExecutionStorage {
   public readonly version = 'v1';
@@ -47,7 +50,12 @@ export class ExecutionStorage {
     return `block-storage:${this.version}:chain:${this._chainId}:blockNumber:${blockNumber}`;
   }
 
-  constructor(protected _db: Redis, protected _chainId: ChainId) {}
+  constructor(
+    protected _db: Redis,
+    protected _firestore: FirebaseFirestore.Firestore,
+    protected _orderbookStorage: OrderbookStorage,
+    protected _chainId: ChainId
+  ) {}
 
   async getBlock(blockNumber: number) {
     const key = this.getBlockKey(blockNumber);
@@ -89,5 +97,23 @@ export class ExecutionStorage {
 
       return mostRecent ?? null;
     }
+  }
+
+  /**
+   * save any executed orders to the persistent db
+   */
+  async saveExecutedOrders(executedOrders: string[]) {
+    const batchHandler = new BatchHandler();
+    for (const orderId of executedOrders) {
+      const executionStatus = await this._orderbookStorage.getExecutionStatus(orderId);
+      if (executionStatus.status === 'matched-executed') {
+        const ref = this._firestore
+          .collection('executedOrders')
+          .doc(orderId) as FirebaseFirestore.DocumentReference<ExecutionStatusMatchedExecuted>;
+
+        await batchHandler.addAsync(ref, executionStatus, { merge: true });
+      }
+    }
+    await batchHandler.flush();
   }
 }

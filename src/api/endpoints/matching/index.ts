@@ -2,6 +2,8 @@ import { ethers } from 'ethers';
 import { FastifyInstance } from 'fastify';
 import PQueue from 'p-queue';
 
+import { ExecutionStatusMatchedExecuted } from '@infinityxyz/lib/types/core';
+
 import { logger } from '@/common/logger';
 import { config } from '@/config';
 import { getOrderbook, getProcesses, startCollection } from '@/lib/collections-queue/start-collection';
@@ -93,14 +95,22 @@ export default async function register(fastify: FastifyInstance) {
 
     const { orderbookStorage } = getOrderbook();
 
-    const status = await orderbookStorage.getExecutionStatus(orderId, orderbookStorage);
+    const persistentStatus = await orderbookStorage.getPersistentExecutionStatus([orderId]);
+    if (persistentStatus[0]?.status) {
+      return {
+        status: persistentStatus[0].status
+      };
+    }
+
+    const status = await orderbookStorage.getExecutionStatus(orderId);
+
     return {
       status
     };
   });
 
   fastify.post(`${base}/orders`, async (request) => {
-    const orderIds =
+    const orderIds: string[] =
       typeof request.body == 'object' && request.body && 'orders' in request.body && Array.isArray(request.body.orders)
         ? request.body.orders
         : [];
@@ -114,11 +124,18 @@ export default async function register(fastify: FastifyInstance) {
 
     const queue = new PQueue({ concurrency: 20 });
 
-    const statuses = orderIds.map(async (orderId: string) => {
-      return await queue.add(async () => {
-        return await orderbookStorage.getExecutionStatus(orderId, orderbookStorage);
-      });
-    });
+    const partialOrderStatuses = await orderbookStorage.getPersistentExecutionStatus(orderIds);
+
+    const statuses = partialOrderStatuses.map(
+      async (item: { orderId: string; status: ExecutionStatusMatchedExecuted | null }) => {
+        return await queue.add(async () => {
+          if (item.status) {
+            return item.status;
+          }
+          return await orderbookStorage.getExecutionStatus(item.orderId);
+        });
+      }
+    );
 
     return {
       data: await Promise.all(statuses)
