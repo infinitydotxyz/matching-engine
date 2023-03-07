@@ -30,18 +30,10 @@ export default async function register(fastify: FastifyInstance) {
 
     const processes = getProcesses(collection);
     const { executionEngine, nonceProvider } = await getExecutionEngine();
-    const jobsProcessing = await executionEngine.queue.count();
-    const jobCounts = await executionEngine.queue.getJobCounts();
 
-    const matchingEngineJobsProcessing = await processes.matchingEngine.queue.count();
-    const matchingEngineJobCounts = await processes.matchingEngine.queue.getJobCounts();
-
-    const orderRelayJobsProcessing = await processes.orderRelay.queue.count();
-    const orderRelayJobCounts = await processes.orderRelay.queue.getJobCounts();
-
-    const matchingEngineHealthPromise = processes.matchingEngine.checkHealth();
-    const orderRelayHealthPromise = processes.orderRelay.checkHealth();
-    const executionEngineHealthPromise = executionEngine.checkHealth();
+    const matchingEngineHealthPromise = processes.matchingEngine.getHealthInfo();
+    const orderRelayHealthPromise = processes.orderRelay.getHealthInfo();
+    const executionEngineHealthPromise = executionEngine.getHealthInfo();
     const [matchingEngineHealth, orderRelayHealth, executionEngineHealth] = await Promise.all([
       matchingEngineHealthPromise,
       orderRelayHealthPromise,
@@ -54,22 +46,10 @@ export default async function register(fastify: FastifyInstance) {
     await executionEngine.close();
 
     return {
-      isSynced: orderRelayJobCounts.waiting < 500 && matchingEngineJobCounts.waiting < 500,
-      matchingEngine: {
-        healthStatus: matchingEngineHealth,
-        jobsProcessing: matchingEngineJobsProcessing,
-        jobCounts: matchingEngineJobCounts
-      },
-      orderRelay: {
-        healthStatus: orderRelayHealth,
-        jobsProcessing: orderRelayJobsProcessing,
-        jobCounts: orderRelayJobCounts
-      },
-      executionEngine: {
-        healthStatus: executionEngineHealth,
-        jobsProcessing: jobsProcessing,
-        jobCounts
-      }
+      isSynced: orderRelayHealth.jobCounts.waiting < 100 && matchingEngineHealth.jobCounts.waiting < 100,
+      matchingEngine: matchingEngineHealth,
+      orderRelay: orderRelayHealth,
+      executionEngine: executionEngineHealth
     };
   });
 

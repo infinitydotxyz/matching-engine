@@ -4,7 +4,7 @@ import Redis from 'ioredis';
 
 import { logger } from '@/common/logger';
 
-import { JobDataType, ProcessJobResult, ProcessOptions, WithTiming } from './types';
+import { HealthInfo, JobDataType, ProcessJobResult, ProcessOptions, WithTiming } from './types';
 
 export abstract class AbstractProcess<T extends { id: string }, U> extends EventEmitter {
   protected _worker: Worker<JobDataType<T>, WithTiming<U> | WithTiming<ProcessJobResult>>;
@@ -183,7 +183,56 @@ export abstract class AbstractProcess<T extends { id: string }, U> extends Event
     };
   }
 
-  public async checkHealth() {
+  public async getHealthInfo() {
+    try {
+      const healthInfo = await this._getCachedHealthInfo();
+      if (healthInfo) {
+        return healthInfo;
+      }
+
+      return await this._getHealthInfo();
+    } catch (err) {
+      return {
+        healthStatus: {
+          status: 'unhealthy',
+          err
+        },
+        jobsProcessing: 0,
+        jobCounts: {
+          waiting: 0
+        }
+      };
+    }
+  }
+
+  protected get _healthInfoCacheKey() {
+    return `${this.queueName}:health:cache`;
+  }
+
+  protected async _getHealthInfo() {
+    const jobsProcessing = await this.queue.count();
+    const jobCounts = (await this.queue.getJobCounts()) as HealthInfo['jobCounts'];
+    const healthCheck = await this.checkHealth();
+
+    const healthInfo: HealthInfo = {
+      healthStatus: healthCheck,
+      jobCounts,
+      jobsProcessing
+    };
+    await this._db.set(this._healthInfoCacheKey, JSON.stringify(healthInfo), 'PX', 30_000);
+    return healthInfo;
+  }
+
+  protected async _getCachedHealthInfo() {
+    try {
+      const cachedInfoString = await this._db.get(this._healthInfoCacheKey);
+      return JSON.parse(cachedInfoString ?? '') as HealthInfo;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  public async checkHealth(): Promise<HealthInfo['healthStatus']> {
     const queueEvents = new QueueEvents(this.queueName, {
       connection: this._db.duplicate(),
       autorun: true
@@ -216,7 +265,8 @@ export abstract class AbstractProcess<T extends { id: string }, U> extends Event
       }
       await queueEvents.close();
       return {
-        status: 'healthy'
+        status: 'healthy',
+        err: undefined
       };
     } catch (err) {
       await queueEvents.close();
