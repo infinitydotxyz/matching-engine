@@ -5,6 +5,8 @@ import Redis from 'ioredis';
 import PQueue from 'p-queue';
 import Redlock, { ExecutionError, RedlockAbortSignal } from 'redlock';
 
+
+
 import { FlashbotsBundleProvider } from '@flashbots/ethers-provider-bundle';
 import { getCallTrace, parseCallTrace } from '@georgeroman/evm-tx-simulator';
 import { ERC20ABI, ERC721ABI } from '@infinityxyz/lib/abi';
@@ -12,21 +14,10 @@ import { ChainId } from '@infinityxyz/lib/types/core';
 import { ONE_MIN } from '@infinityxyz/lib/utils';
 import { Common } from '@reservoir0x/sdk';
 
-import {
-  Block,
-  BlockWithGas,
-  BlockWithMaxFeePerGas,
-  ExecutedBlock,
-  NotIncludedBlock,
-  PendingExecutionBlock,
-  SkippedExecutionBlock
-} from '@/common/block';
-import {
-  ExecutedExecutionOrder,
-  InexecutableExecutionOrder,
-  NotIncludedExecutionOrder,
-  PendingExecutionOrder
-} from '@/common/execution-order';
+
+
+import { Block, BlockWithGas, BlockWithMaxFeePerGas, ExecutedBlock, NotIncludedBlock, PendingExecutionBlock, SkippedExecutionBlock } from '@/common/block';
+import { ExecutedExecutionOrder, InexecutableExecutionOrder, NotIncludedExecutionOrder, PendingExecutionOrder } from '@/common/execution-order';
 import { logger } from '@/common/logger';
 import { config } from '@/config';
 import { Broadcaster } from '@/lib/broadcaster/broadcaster.abstract';
@@ -42,6 +33,7 @@ import { OrderbookStorage } from '@/lib/orderbook/v1';
 import { AbstractProcess } from '@/lib/process/process.abstract';
 import { ProcessOptions } from '@/lib/process/types';
 import { Invalid, ValidWithData, ValidityResultWithData } from '@/lib/utils/validity-result';
+
 
 export type ExecutionEngineJob = {
   id: string;
@@ -293,7 +285,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     initiatedAt: number,
     receipt: ethers.providers.TransactionReceipt
   ): Promise<void> {
-    // TODO export executed order + block data to firestore
+    // joe-todo: export executed order + block data to firestore
     const keyValuePairs: string[] = [];
 
     const receiptReceivedAt = Date.now();
@@ -838,7 +830,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       pipeline.zadd(this._storage.executedOrdersOrderedSetKey, expiration, match.listing.id);
       pipeline.zadd(this._storage.executedOrdersOrderedSetKey, expiration, match.offer.id);
     }
-    await pipeline.exec(); // TODO remove expired orders from the set
+    await pipeline.exec(); // joe-todo: remove expired orders from the set
   }
 
   protected async _loadPendingOrderIds() {
@@ -938,7 +930,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
           },
           targetBlock: {
             number: blockNumber + this._blockOffset,
-            timestamp: block.timestamp + this._blockOffset * 13, // TODO this should be configured based on the chain
+            timestamp: block.timestamp + this._blockOffset * 13, // joe-todo: this should be configured based on the chain
             baseFeePerGas: FlashbotsBundleProvider.getMaxBaseFeeInFutureBlock(
               baseFeePerGas,
               this._blockOffset

@@ -128,13 +128,13 @@ export class NativeMatch extends OrderMatch {
     } else if (!BigNumber.from(offer.constraints[0]).eq(1)) {
       return {
         isValid: false,
-        reason: 'Orders with num items > 1 are not supported', // TODO support orders with more than 1 item
+        reason: 'Orders with num items > 1 are not supported', // future-todo: support orders with more than 1 item
         isTransient: false
       };
     } else if (BigNumber.from(offer.constraints[1]).lt(listing.constraints[1])) {
       return {
         isValid: false,
-        reason: 'Offer start price is less than listing start price', // TODO dynamic orders not supported
+        reason: 'Offer start price is less than listing start price', // future-todo: dynamic orders not supported
         isTransient: false
       };
     } else if (BigNumber.from(offer.constraints[3]).gt(targetBlock.timestamp)) {

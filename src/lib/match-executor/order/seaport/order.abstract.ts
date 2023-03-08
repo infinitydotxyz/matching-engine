@@ -1,10 +1,16 @@
 import { BigNumber, ethers } from 'ethers';
 
+
+
 import { ChainId, ChainNFTs } from '@infinityxyz/lib/types/core';
 import { Common, Flow, Seaport } from '@reservoir0x/sdk';
 
+
+
 import SeaportConduitControllerAbi from '@/common/abi/seaport-conduit-controller.json';
 import { OrderData } from '@/lib/orderbook/v1/types';
+
+
 
 import { NonNativeMatchExecutionInfo } from '../../match/types';
 import { Erc721Transfer, EthTransfer, TransferKind, WethTransfer } from '../../simulator/types';
@@ -12,6 +18,7 @@ import { Call } from '../../types';
 import { ErrorCode } from '../errors/error-code';
 import { OrderCurrencyError, OrderDynamicError, OrderError, OrderKindError } from '../errors/order-error';
 import { NonNativeOrder } from '../non-native-order';
+
 
 export abstract class SeaportOrder extends NonNativeOrder<Seaport.Types.OrderComponents> {
   readonly source = 'seaport';
@@ -290,7 +297,7 @@ export abstract class SeaportOrder extends NonNativeOrder<Seaport.Types.OrderCom
         operator: makerConduit,
         from: taker,
         to: this._sourceParams.offerer,
-        value: value.toString() // TODO consider fees
+        value: value.toString() // joe-todo: consider fees
       };
     } else {
       currencyTransfer = {
