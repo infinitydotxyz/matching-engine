@@ -390,6 +390,15 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     if (executedOrders.length > 0 && !this._broadcaster.isForked) {
       await this._storage.executionStorage.saveExecutedOrders(executedOrders);
     }
+    await this._cleanup();
+  }
+
+  protected async _cleanup() {
+    try {
+      await this._db.zremrangebyscore(this._storage.executedOrdersOrderedSetKey, 0, Date.now());
+    } catch (err) {
+      this.warn(`Cleanup failed ${err}`);
+    }
   }
 
   protected async savePendingBlock(
