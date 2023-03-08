@@ -529,9 +529,9 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       const finalState = parseCallTrace(trace);
 
       const ethBalanceDiff = BigNumber.from(
-        finalState[matchExecutor].tokenBalanceState['native:0x0000000000000000000000000000000000000000'] ?? '0'
+        finalState[matchExecutor]?.tokenBalanceState?.['native:0x0000000000000000000000000000000000000000'] ?? '0'
       );
-      const wethBalanceDiff = BigNumber.from(finalState[matchExecutor].tokenBalanceState[`erc20:${weth}`] ?? '0');
+      const wethBalanceDiff = BigNumber.from(finalState[matchExecutor]?.tokenBalanceState?.[`erc20:${weth}`] ?? '0');
       const totalBalanceDiff = ethBalanceDiff.add(wethBalanceDiff);
 
       if (totalBalanceDiff.gte(0)) {
