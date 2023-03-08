@@ -122,7 +122,8 @@ export class OrderExecutionSimulator {
   }
 
   protected _handleErc721Transfer({ contract, tokenId, from, to }: Erc721Transfer) {
-    const token = this._currentState.erc721Balances[contract]?.balances?.[tokenId];
+    const contractState = this._currentState.erc721Balances[contract];
+    const token = contractState?.balances?.[tokenId];
 
     if (!token) {
       throw new ExecutionError(

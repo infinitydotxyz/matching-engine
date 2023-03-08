@@ -47,51 +47,6 @@ export abstract class SeaportV14Order extends NonNativeOrder<SeaportV14.Types.Or
    */
   protected abstract _checkOrderKindValid(): void;
 
-  protected getExecutionTransfers(taker: string, exchangeAddress: string) {
-    const currency = this.currency;
-    const amount = this.startPrice;
-
-    let currencyTransfer: EthTransfer | WethTransfer;
-    if (currency === Common.Addresses.Eth[this.chainId]) {
-      const ethTransfer: EthTransfer = {
-        kind: TransferKind.ETH,
-        value: amount,
-        from: this.maker,
-        to: taker
-      };
-      currencyTransfer = ethTransfer;
-    } else if (currency === Common.Addresses.Weth[this.chainId]) {
-      const wethTransfer: WethTransfer = {
-        kind: TransferKind.WETH,
-        value: amount,
-        from: this.maker,
-        to: taker,
-        contract: currency,
-        operator: exchangeAddress
-      };
-      currencyTransfer = wethTransfer;
-    } else {
-      throw new Error('Invalid currency');
-    }
-
-    const tokens = this.nfts;
-
-    const erc721Transfers: Erc721Transfer[] = tokens.flatMap(({ collection, tokens }) => {
-      return tokens.map((token) => {
-        const erc721Transfer: Erc721Transfer = {
-          kind: TransferKind.ERC721,
-          from: this.maker,
-          to: taker,
-          contract: collection,
-          tokenId: token.tokenId
-        };
-        return erc721Transfer;
-      });
-    });
-
-    return [currencyTransfer, ...erc721Transfers];
-  }
-
   public get isSellOrder() {
     return this._orderData.order.isSellOrder;
   }
@@ -261,7 +216,7 @@ export abstract class SeaportV14Order extends NonNativeOrder<SeaportV14.Types.Or
     return orderItems;
   }
 
-  async getExecutionInfo(taker: string): Promise<Omit<NonNativeMatchExecutionInfo, 'nativeExecutionTransfers'>> {
+  async getOperator() {
     const conduit = SeaportV14.Addresses.ConduitController[this.chainId];
     const conduitController = new ethers.Contract(conduit, SeaportConduitControllerAbi, this._provider);
 
@@ -276,6 +231,12 @@ export abstract class SeaportV14Order extends NonNativeOrder<SeaportV14.Types.Or
               return result.conduit.toLowerCase();
             }
           });
+
+    return makerConduit;
+  }
+
+  async getExecutionInfo(taker: string): Promise<Omit<NonNativeMatchExecutionInfo, 'nativeExecutionTransfers'>> {
+    const makerConduit = await this.getOperator();
 
     const isWeth = this.currency === this.weth;
 

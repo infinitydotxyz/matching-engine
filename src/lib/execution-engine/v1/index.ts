@@ -534,12 +534,15 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       if ('error' in trace && trace.error) {
         const error = trace.error;
         console.log(`Error while simulating balance changes`);
-        console.log(JSON.stringify(error, null, 2));
-        const state = parseCallTrace(trace);
+        console.log(error);
 
-        console.log(`State after call trace`);
-        console.log(JSON.stringify(state, null, 2));
-
+        try {
+          await this._rpcProvider.estimateGas({
+            ...txData
+          });
+        } catch (err) {
+          this.warn(`Failed to simulate balance changes: $${(error as any).reason}`);
+        }
         return {
           isValid: false,
           reason: 'transaction reverted',
