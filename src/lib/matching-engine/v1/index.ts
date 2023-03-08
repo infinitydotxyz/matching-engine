@@ -103,6 +103,7 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
 
         let metadata: MatchOperationMetadata;
         if (order.id !== orderId) {
+          const matchDuration = matchTimestamp - job.data.proposerInitiatedAt;
           metadata = {
             validMatches: matchIdsArray.length,
             matchLimit: this._MATCH_LIMIT,
@@ -111,13 +112,15 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
             timing: {
               proposerInitiatedAt: job.data.proposerInitiatedAt,
               matchedAt: matchTimestamp,
-              matchDuration: matchTimestamp - job.data.proposerInitiatedAt
+              matchDuration
             }
           };
           pipeline.set(this._storage.getOrderMatchOperationMetadataKey(orderId), JSON.stringify(metadata));
+          this._storage.executionStorage.saveMatchDuration(pipeline, order.getOrderItem().collection, matchDuration);
         }
       }
 
+      const matchDuration = matchTimestamp - job.data.proposerInitiatedAt;
       const metadata: MatchOperationMetadata = {
         validMatches: validMatches.length,
         matchLimit: this._MATCH_LIMIT,
@@ -129,6 +132,7 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
           matchDuration: matchTimestamp - job.data.proposerInitiatedAt
         }
       };
+      this._storage.executionStorage.saveMatchDuration(pipeline, order.getOrderItem().collection, matchDuration);
       pipeline.set(this._storage.getOrderMatchOperationMetadataKey(orderId), JSON.stringify(metadata));
 
       for (const match of validMatches) {

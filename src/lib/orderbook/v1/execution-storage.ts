@@ -1,4 +1,4 @@
-import Redis from 'ioredis';
+import Redis, { ChainableCommander } from 'ioredis';
 
 import { ChainId, ExecutionStatusMatchedExecuted } from '@infinityxyz/lib/types/core';
 
@@ -43,9 +43,32 @@ export class ExecutionStorage {
   }
 
   /**
-   * ------ BLOCK EXECUTION STATUS ------
+   * ------ MATCH STATS ------
    */
 
+  getCollectionMatchDurationsKey(collection: string) {
+    return `stats:${this.version}:chain:${this._chainId}:collection:${collection}:match-duration`;
+  }
+
+  getGlobalMatchDurationsKey() {
+    return `stats:${this.version}:chain:${this._chainId}:global:match-duration`;
+  }
+
+  /**
+   * ------ EXECUTION STATS ------
+   */
+
+  getCollectionExecutionDurationsKey(collection: string) {
+    return `stats:${this.version}:chain:${this._chainId}:collection:${collection}:execution-duration`;
+  }
+
+  getGlobalExecutionDurationsKey() {
+    return `stats:${this.version}:chain:${this._chainId}:global:execution-duration`;
+  }
+
+  /**
+   * ------ BLOCK EXECUTION STATUS ------
+   */
   getBlockKey(blockNumber: number) {
     return `block-storage:${this.version}:chain:${this._chainId}:blockNumber:${blockNumber}`;
   }
@@ -115,5 +138,25 @@ export class ExecutionStorage {
       }
     }
     await batchHandler.flush();
+  }
+
+  saveMatchDuration(pipeline: ChainableCommander, collection: string, duration: number) {
+    const collectionMatchDurationKey = this.getCollectionMatchDurationsKey(collection);
+    const globalMatchDurationKey = this.getGlobalMatchDurationsKey();
+
+    pipeline.lpush(collectionMatchDurationKey, duration);
+    pipeline.ltrim(collectionMatchDurationKey, 0, 999);
+    pipeline.lpush(globalMatchDurationKey, duration);
+    pipeline.ltrim(globalMatchDurationKey, 0, 999);
+  }
+
+  saveExecutionDuration(pipeline: ChainableCommander, collection: string, duration: number) {
+    const collectionMatchExecutionKey = this.getCollectionExecutionDurationsKey(collection);
+    const globalMatchExecutionKey = this.getGlobalExecutionDurationsKey();
+
+    pipeline.lpush(collectionMatchExecutionKey, duration);
+    pipeline.ltrim(collectionMatchExecutionKey, 0, 999);
+    pipeline.lpush(globalMatchExecutionKey, duration);
+    pipeline.ltrim(globalMatchExecutionKey, 0, 999);
   }
 }

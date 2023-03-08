@@ -316,12 +316,15 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       const blockKey = this._storage.executionStorage.getBlockKey(block.number);
       keyValuePairs.push(blockKey, JSON.stringify(executedBlock));
 
+      const pipeline = this._db.pipeline();
+      let pipelineRequiresSave = false;
       for (const item of txnMatches) {
         const ids = [item.match.listing.id, item.match.offer.id];
         for (const id of ids) {
           if (!handledOrderIds.has(id)) {
             handledOrderIds.add(id);
             const matchedOrderId = ids.find((item) => item !== id);
+            const executionDuration = blockData.timestamp - initiatedAt;
             const executedOrder: ExecutedExecutionOrder = {
               block,
               matchedOrderId: matchedOrderId ?? '',
@@ -340,8 +343,17 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
             const orderKey = this._storage.executionStorage.getExecutedOrderExecutionKey(id);
             keyValuePairs.push(orderKey, JSON.stringify(executedOrder));
             executedOrders.push(id);
+            const collection =
+              item.match.listing.order.nfts[0]?.collection ?? item.match.offer.order.nfts[0]?.collection;
+            if (collection) {
+              this._storage.executionStorage.saveExecutionDuration(pipeline, collection, executionDuration);
+              pipelineRequiresSave = true;
+            }
           }
         }
+      }
+      if (pipelineRequiresSave) {
+        await pipeline.exec();
       }
     } else {
       const executedBlock: NotIncludedBlock = {
