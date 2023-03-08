@@ -50,8 +50,16 @@ export class ExecutionStorage {
     return `stats:${this.version}:chain:${this._chainId}:collection:${collection}:match-duration`;
   }
 
+  getCollectionAverageMatchDurationKey(collection: string) {
+    return `stats:${this.version}:chain:${this._chainId}:collection:${collection}:match-duration:average`;
+  }
+
   getGlobalMatchDurationsKey() {
     return `stats:${this.version}:chain:${this._chainId}:global:match-duration`;
+  }
+
+  getGlobalAverageMatchDurationsKey() {
+    return `stats:${this.version}:chain:${this._chainId}:global:match-duration:average`;
   }
 
   /**
@@ -62,8 +70,16 @@ export class ExecutionStorage {
     return `stats:${this.version}:chain:${this._chainId}:collection:${collection}:execution-duration`;
   }
 
+  getCollectionAverageExecutionDurationsKey(collection: string) {
+    return `stats:${this.version}:chain:${this._chainId}:collection:${collection}:execution-duration:average`;
+  }
+
   getGlobalExecutionDurationsKey() {
     return `stats:${this.version}:chain:${this._chainId}:global:execution-duration`;
+  }
+
+  getGlobalAverageExecutionDurationsKey() {
+    return `stats:${this.version}:chain:${this._chainId}:global:execution-duration:average`;
   }
 
   /**
@@ -138,6 +154,98 @@ export class ExecutionStorage {
       }
     }
     await batchHandler.flush();
+  }
+
+  async getAverageMatchDuration(collection: string) {
+    const collectionMatchDurationListKey = this.getCollectionMatchDurationsKey(collection);
+    const collectionAverageMatchDurationKey = this.getCollectionAverageMatchDurationKey(collection);
+    const globalMatchDurationListKey = this.getGlobalMatchDurationsKey();
+    const globalAverageMatchDurationKey = this.getGlobalAverageMatchDurationsKey();
+
+    const [collectionAverageMatchDurationString, globalAverageMatchDurationString] = await this._db.mget(
+      collectionAverageMatchDurationKey,
+      globalAverageMatchDurationKey
+    );
+
+    let collectionAverageMatchDuration: number | null = collectionAverageMatchDurationString
+      ? parseInt(collectionAverageMatchDurationString, 10)
+      : null;
+
+    let globalAverageMatchDuration: number | null = globalAverageMatchDurationString
+      ? parseInt(globalAverageMatchDurationString, 10)
+      : null;
+
+    if (collectionAverageMatchDuration == null) {
+      const collectionMatchDurations = await this._db.lrange(collectionMatchDurationListKey, 0, -1);
+      if (collectionMatchDurations.length > 0) {
+        collectionAverageMatchDuration =
+          collectionMatchDurations.reduce((sum, item) => {
+            return (sum += parseInt(item, 10));
+          }, 0) / collectionMatchDurations.length;
+        await this._db.set(collectionAverageMatchDurationKey, collectionAverageMatchDuration, 'PX', 30_000);
+      }
+    }
+    if (globalAverageMatchDuration == null) {
+      const globalMatchDurations = await this._db.lrange(globalMatchDurationListKey, 0, -1);
+      if (globalMatchDurations.length > 0) {
+        globalAverageMatchDuration =
+          globalMatchDurations.reduce((sum, item) => {
+            return (sum += parseInt(item, 10));
+          }, 0) / globalMatchDurations.length;
+        await this._db.set(globalAverageMatchDurationKey, globalAverageMatchDuration, 'PX', 30_000);
+      }
+    }
+
+    return {
+      globalAverage: globalAverageMatchDuration,
+      collectionAverage: collectionAverageMatchDuration
+    };
+  }
+
+  async getAverageExecutionDuration(collection: string) {
+    const collectionExecutionDurationListKey = this.getCollectionExecutionDurationsKey(collection);
+    const collectionAverageExecutionDurationKey = this.getCollectionAverageExecutionDurationsKey(collection);
+    const globalExecutionDurationListKey = this.getGlobalExecutionDurationsKey();
+    const globalAverageExecutionDurationKey = this.getGlobalAverageExecutionDurationsKey();
+
+    const [collectionAverageExecutionDurationString, globalAverageExecutionDurationString] = await this._db.mget(
+      collectionAverageExecutionDurationKey,
+      globalAverageExecutionDurationKey
+    );
+
+    let collectionAverageExecutionDuration: number | null = collectionAverageExecutionDurationString
+      ? parseInt(collectionAverageExecutionDurationString, 10)
+      : null;
+
+    let globalAverageExecutionDuration: number | null = globalAverageExecutionDurationString
+      ? parseInt(globalAverageExecutionDurationString, 10)
+      : null;
+
+    if (collectionAverageExecutionDuration == null) {
+      const collectionExecutionDurations = await this._db.lrange(collectionExecutionDurationListKey, 0, -1);
+      if (collectionExecutionDurations.length > 0) {
+        collectionAverageExecutionDuration =
+          collectionExecutionDurations.reduce((sum, item) => {
+            return (sum += parseInt(item, 10));
+          }, 0) / collectionExecutionDurations.length;
+        await this._db.set(collectionAverageExecutionDurationKey, collectionAverageExecutionDuration, 'PX', 30_000);
+      }
+    }
+    if (globalAverageExecutionDuration == null) {
+      const globalExecutionDurations = await this._db.lrange(globalExecutionDurationListKey, 0, -1);
+      if (globalExecutionDurations.length > 0) {
+        globalAverageExecutionDuration =
+          globalExecutionDurations.reduce((sum, item) => {
+            return (sum += parseInt(item, 10));
+          }, 0) / globalExecutionDurations.length;
+        await this._db.set(globalAverageExecutionDurationKey, globalAverageExecutionDuration, 'PX', 30_000);
+      }
+    }
+
+    return {
+      globalAverage: globalAverageExecutionDuration,
+      collectionAverage: collectionAverageExecutionDuration
+    };
   }
 
   saveMatchDuration(pipeline: ChainableCommander, collection: string, duration: number) {

@@ -296,7 +296,7 @@ export class OrderRelay extends AbstractOrderRelay<OB.Order, OB.Types.OrderData,
                   gasUsage: data.gasUsage
                 },
                 type: 'live' as const,
-                proposerInitiatedAt: data.timestamp
+                proposerInitiatedAt: Math.min(data.timestamp, Date.now())
               };
             });
 

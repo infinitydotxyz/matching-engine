@@ -32,15 +32,19 @@ export default async function register(fastify: FastifyInstance) {
 
     const processes = getProcesses(collection);
     const { executionEngine, nonceProvider } = await getExecutionEngine();
+    const { orderbookStorage } = getOrderbook();
 
     const matchingEngineHealthPromise = processes.matchingEngine.getHealthInfo();
     const orderRelayHealthPromise = processes.orderRelay.getHealthInfo();
     const executionEngineHealthPromise = executionEngine.getHealthInfo();
-    const [matchingEngineHealth, orderRelayHealth, executionEngineHealth] = await Promise.all([
-      matchingEngineHealthPromise,
-      orderRelayHealthPromise,
-      executionEngineHealthPromise
-    ]);
+    const [matchingEngineHealth, orderRelayHealth, executionEngineHealth, matchAverages, executionAverages] =
+      await Promise.all([
+        matchingEngineHealthPromise,
+        orderRelayHealthPromise,
+        executionEngineHealthPromise,
+        orderbookStorage.executionStorage.getAverageMatchDuration(collection),
+        orderbookStorage.executionStorage.getAverageExecutionDuration(collection)
+      ]);
 
     await processes.matchingEngine.close();
     await processes.orderRelay.close();
@@ -51,7 +55,11 @@ export default async function register(fastify: FastifyInstance) {
       isSynced: orderRelayHealth.jobCounts.waiting < 100 && matchingEngineHealth.jobCounts.waiting < 100,
       matchingEngine: matchingEngineHealth,
       orderRelay: orderRelayHealth,
-      executionEngine: executionEngineHealth
+      executionEngine: executionEngineHealth,
+      averages: {
+        matchingEngine: matchAverages,
+        executionEngine: executionAverages
+      }
     };
   });
 

@@ -210,13 +210,15 @@ export abstract class AbstractProcess<T extends { id: string }, U> extends Event
   }
 
   protected async _getHealthInfo() {
-    const jobsProcessing = await this.queue.count();
-    const jobCounts = (await this.queue.getJobCounts()) as HealthInfo['jobCounts'];
-    const healthCheck = await this.checkHealth();
+    const [jobsProcessing, jobCounts, healthCheck] = await Promise.all([
+      this.queue.count(),
+      this.queue.getJobCounts(),
+      this.checkHealth()
+    ]);
 
     const healthInfo: HealthInfo = {
       healthStatus: healthCheck,
-      jobCounts,
+      jobCounts: jobCounts as HealthInfo['jobCounts'],
       jobsProcessing
     };
     await this._db.set(this._healthInfoCacheKey, JSON.stringify(healthInfo), 'PX', 30_000);
