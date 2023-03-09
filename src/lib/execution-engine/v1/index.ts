@@ -1,4 +1,4 @@
-import { Job } from 'bullmq';
+import { BulkJobOptions, Job } from 'bullmq';
 import { BigNumber, BigNumberish, ethers } from 'ethers';
 import { formatEther, formatUnits } from 'ethers/lib/utils';
 import Redis from 'ioredis';
@@ -39,8 +39,10 @@ import { ExecutionState, Transfer, TransferKind } from '@/lib/match-executor/sim
 import { Batch, ExternalFulfillments, MatchOrders } from '@/lib/match-executor/types';
 import { OrderbookStorage } from '@/lib/orderbook/v1';
 import { AbstractProcess } from '@/lib/process/process.abstract';
-import { ProcessOptions } from '@/lib/process/types';
+import { JobDataType, ProcessOptions } from '@/lib/process/types';
 import { Invalid, ValidWithData, ValidityResultWithData } from '@/lib/utils/validity-result';
+
+import { InvalidMatchError } from '../errors';
 
 export type ExecutionEngineJob = {
   id: string;
@@ -54,6 +56,8 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
   protected _version: string;
 
   protected _startTimestampSeconds: number;
+
+  protected _maxAttempts = 3;
 
   constructor(
     protected _chainId: ChainId,
@@ -159,8 +163,12 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       logger.log('execution-engine', `Block ${target.number}. Simulating balance changes`);
       const balanceSimulationResult = await this.simulateBalanceChanges(txnData);
       if (!balanceSimulationResult.isValid) {
-        await this.saveSkippedBlock(targetWithGas, inexecutable, initiatedAt, balanceSimulationResult.reason);
-        throw new Error(balanceSimulationResult.reason);
+        await this.detectInvalidMatches(txnMatches, targetWithGas, current);
+        if (job.attemptsMade === this._maxAttempts) {
+          await this.saveSkippedBlock(targetWithGas, inexecutable, initiatedAt, balanceSimulationResult.reason);
+          throw new Error(balanceSimulationResult.reason);
+        }
+        throw new InvalidMatchError(`Received invalid match`);
       }
 
       this.savePendingBlock(targetWithGas, txnMatches, inexecutable, balanceSimulationResult, initiatedAt).catch(
@@ -201,7 +209,62 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         receipt
       );
     } catch (err) {
+      if (err instanceof InvalidMatchError) {
+        // throw the error to trigger a retry
+        throw err;
+      }
       logger.error('execution-engine', `failed to process job for block ${target.number} ${err}`);
+    }
+  }
+
+  async add(job: ExecutionEngineJob, id?: string): Promise<void>;
+  async add(jobs: ExecutionEngineJob[]): Promise<void>;
+  async add(job: ExecutionEngineJob | ExecutionEngineJob[], id?: string): Promise<void> {
+    const arr = Array.isArray(job) ? job : [job];
+    if (Array.isArray(job) && id) {
+      throw new Error(`Can only specify an id for a single job`);
+    }
+
+    const jobs: {
+      name: string;
+      data: JobDataType<ExecutionEngineJob>;
+      opts?: BulkJobOptions | undefined;
+    }[] = arr.map((item) => {
+      return {
+        name: `${item.id}`,
+        data: {
+          _processMetadata: {
+            type: 'default'
+          },
+          ...item
+        },
+        opts: {
+          attempts: this._maxAttempts,
+          backoff: 0
+        }
+      };
+    });
+    await this._queue.addBulk(jobs);
+  }
+
+  protected async detectInvalidMatches(
+    txnMatches: (NativeMatch | NonNativeMatch)[],
+    targetBlock: BlockWithGas,
+    currentBlock: Block
+  ) {
+    const matches = [];
+    for (const match of txnMatches) {
+      matches.push(match);
+      const { txn } = await this._generateTxn(matches, targetBlock, currentBlock);
+      if (txn) {
+        try {
+          await this._rpcProvider.estimateGas(txn);
+        } catch (err) {
+          this.error(`Match ${match.id} is invalid!`);
+          await this._savePendingMatches([match.match], 15);
+          return;
+        }
+      }
     }
   }
 
@@ -541,7 +604,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
             ...txData
           });
         } catch (err) {
-          this.warn(`Failed to simulate balance changes: $${(error as any).reason}`);
+          this.warn(`Failed to simulate balance changes: ${(error as any).reason}`);
         }
         return {
           isValid: false,
@@ -867,10 +930,10 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     });
   }
 
-  protected async _savePendingMatches(matches: Match[]) {
+  protected async _savePendingMatches(matches: Match[], ttlMinutes = 5) {
     const pipeline = this._db.pipeline();
     const now = Date.now();
-    const expiration = now + ONE_MIN * 5;
+    const expiration = now + ONE_MIN * ttlMinutes;
     for (const match of matches) {
       pipeline.zadd(this._storage.executedOrdersOrderedSetKey, expiration, match.listing.id);
       pipeline.zadd(this._storage.executedOrdersOrderedSetKey, expiration, match.offer.id);
