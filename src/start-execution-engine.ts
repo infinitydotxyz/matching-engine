@@ -66,7 +66,7 @@ export const startExecutionEngine = async () => {
     network.httpProvider,
     {
       debug: config.env.debug,
-      concurrency: 2,
+      concurrency: 1,
       enableMetrics: false
     }
   );

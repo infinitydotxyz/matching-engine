@@ -69,8 +69,14 @@ export abstract class AbstractProcess<T extends { id: string }, U> extends Event
 
   abstract processJob(job: Job<T, U>): Promise<U>;
 
-  async add(job: T | T[]): Promise<void> {
+  async add(job: T, id?: string): Promise<void>;
+  async add(jobs: T[]): Promise<void>;
+  async add(job: T | T[], id?: string): Promise<void> {
     const arr = Array.isArray(job) ? job : [job];
+    if (Array.isArray(job) && id) {
+      throw new Error(`Can only specify an id for a single job`);
+    }
+
     const jobs: {
       name: string;
       data: JobDataType<T>;

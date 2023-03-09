@@ -1,7 +1,7 @@
 import { BigNumber, ethers } from 'ethers';
 
 import { ChainId, ChainNFTs } from '@infinityxyz/lib/types/core';
-import { Common, Flow, SeaportV14 } from '@reservoir0x/sdk';
+import { Flow, SeaportV14 } from '@reservoir0x/sdk';
 
 import SeaportConduitControllerAbi from '@/common/abi/seaport-conduit-controller.json';
 import { OrderData } from '@/lib/orderbook/v1/types';

@@ -226,7 +226,7 @@ export class ExecutionStorage {
       if (collectionExecutionDurations.length > 0) {
         collectionAverageExecutionDuration =
           collectionExecutionDurations.reduce((sum, item) => {
-            return (sum += parseInt(item, 10));
+            return sum + parseInt(item, 10);
           }, 0) / collectionExecutionDurations.length;
         await this._db.set(collectionAverageExecutionDurationKey, collectionAverageExecutionDuration, 'PX', 30_000);
       }
@@ -236,7 +236,7 @@ export class ExecutionStorage {
       if (globalExecutionDurations.length > 0) {
         globalAverageExecutionDuration =
           globalExecutionDurations.reduce((sum, item) => {
-            return (sum += parseInt(item, 10));
+            return sum + parseInt(item, 10);
           }, 0) / globalExecutionDurations.length;
         await this._db.set(globalAverageExecutionDurationKey, globalAverageExecutionDuration, 'PX', 30_000);
       }

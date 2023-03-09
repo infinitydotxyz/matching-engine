@@ -5,13 +5,15 @@ import { ExecutionError } from 'redlock';
 
 import { FlashbotsBundleProvider } from '@flashbots/ethers-provider-bundle';
 import { ChainId } from '@infinityxyz/lib/types/core';
-import { sleep } from '@infinityxyz/lib/utils';
+import { ONE_MIN, sleep } from '@infinityxyz/lib/utils';
 
 import { Block } from '@/common/block';
 import { redlock } from '@/common/db';
 import { config } from '@/config';
 import { AbstractProcess } from '@/lib/process/process.abstract';
 import { ProcessOptions } from '@/lib/process/types';
+
+import { safeWebSocketSubscription } from '../utils/safe-websocket-subscription';
 
 interface JobData {
   id: string;
@@ -66,6 +68,12 @@ export class BlockScheduler extends AbstractProcess<JobData, JobResult> {
     const lockKey = `block-scheduler:chain:${config.env.chainId}:lock`;
     const lockDuration = 15_000;
 
+    if (job.timestamp < Date.now() - 5 * ONE_MIN) {
+      return {
+        id: job.data.id
+      };
+    }
+
     let cancel: undefined | (() => void);
     const handler = (signal: AbortSignal) => async (blockNumber: number) => {
       this.log(`Received block ${blockNumber}`);
@@ -98,27 +106,33 @@ export class BlockScheduler extends AbstractProcess<JobData, JobResult> {
       };
 
       for (const blockProcessor of this._blockProcessors) {
-        await blockProcessor.add(job);
+        await blockProcessor.add(job, job.id);
       }
     };
 
     try {
       await redlock.using([lockKey], lockDuration, async (signal) => {
         this.log(`Acquired lock!`);
-
         const callback = handler(signal);
-        await new Promise<void>((resolve, reject) => {
-          cancel = () => {
-            this._wsProvider.off('block', callback);
-            if (signal.aborted) {
-              reject(signal.error ?? new Error('Aborted'));
-            } else {
-              resolve();
-            }
-          };
-
-          this._wsProvider.on('block', callback);
+        /**
+         * use web sockets to attempt to get block numbers
+         * right await
+         */
+        safeWebSocketSubscription(this._wsProvider.connection.url, async (provider) => {
+          provider.on('block', callback);
+          await Promise.resolve();
         });
+
+        /**
+         * poll in-case the websocket connection fails
+         */
+        const iterator = this._blockIterator(3_000);
+        for await (const { blockNumber } of iterator) {
+          await callback(blockNumber);
+          if (signal.aborted) {
+            return;
+          }
+        }
       });
     } catch (err) {
       if (err instanceof ExecutionError) {
@@ -139,5 +153,13 @@ export class BlockScheduler extends AbstractProcess<JobData, JobResult> {
     return {
       id: job.data.id
     };
+  }
+
+  protected async *_blockIterator(delay: number) {
+    while (true) {
+      const blockNumber = await this._httpProvider.getBlockNumber();
+      yield { blockNumber };
+      await sleep(delay);
+    }
   }
 }
