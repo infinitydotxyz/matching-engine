@@ -7,7 +7,7 @@ import Redlock, { RedlockAbortSignal } from 'redlock';
 
 import { getCallTrace, parseCallTrace } from '@georgeroman/evm-tx-simulator';
 import { ERC20ABI, ERC721ABI } from '@infinityxyz/lib/abi';
-import { ChainId } from '@infinityxyz/lib/types/core';
+import { ChainId, ChainNFTs } from '@infinityxyz/lib/types/core';
 import { ONE_MIN } from '@infinityxyz/lib/utils';
 import { Common } from '@reservoir0x/sdk';
 
@@ -36,7 +36,7 @@ import { Match, NativeMatchExecutionInfo, NonNativeMatchExecutionInfo } from '@/
 import { OrderFactory } from '@/lib/match-executor/order/flow';
 import { OrderExecutionSimulator } from '@/lib/match-executor/simulator/order-execution-simulator';
 import { ExecutionState, Transfer, TransferKind } from '@/lib/match-executor/simulator/types';
-import { Batch, ExternalFulfillments, MatchOrders } from '@/lib/match-executor/types';
+import { Batch, Call, ExternalFulfillments, MatchOrders } from '@/lib/match-executor/types';
 import { OrderbookStorage } from '@/lib/orderbook/v1';
 import { AbstractProcess } from '@/lib/process/process.abstract';
 import { JobDataType, ProcessOptions } from '@/lib/process/types';
@@ -133,19 +133,61 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         this._matchExecutor.initiator,
         orderDurationSeconds
       );
-      const sortedMatches = this._sortMatches(nonPendingMatches).map((item) => {
-        if (item.isNative) {
-          return new NativeMatch(item, this._chainId, orderFactory);
+      const initializedMatchResults = await Promise.all(
+        this._sortMatches(nonPendingMatches).map(async (item) => {
+          let match: NativeMatch | NonNativeMatch;
+          if (item.isNative) {
+            match = new NativeMatch(item, this._chainId, orderFactory);
+          } else {
+            match = new NonNativeMatch(
+              item,
+              this._chainId,
+              orderFactory,
+              this._rpcProvider,
+              this._matchExecutor.address
+            );
+          }
+          const matchValidity = await match.prepare({ taker: this._matchExecutor.address });
+          if (matchValidity.isValid) {
+            return {
+              isValid: true,
+              data: match
+            };
+          }
+          return {
+            isValid: false,
+            reason: matchValidity.reason,
+            isTransient: matchValidity.isTransient,
+            data: match
+          };
+        })
+      );
+
+      const { initializedMatches, failedMatches } = initializedMatchResults.reduce(
+        (acc, item) => {
+          if (item.isValid) {
+            acc.initializedMatches.push(item.data);
+          } else {
+            acc.failedMatches.push(item.data);
+          }
+          return acc;
+        },
+        {
+          initializedMatches: [] as (NativeMatch | NonNativeMatch)[],
+          failedMatches: [] as (NativeMatch | NonNativeMatch)[]
         }
-        return new NonNativeMatch(item, this._chainId, orderFactory, this._rpcProvider, this._matchExecutor.address);
-      });
+      );
 
       logger.log(
         'execution-engine',
-        `Block ${target.number}. Found ${sortedMatches.length} order matches before simulation.`
+        `Block ${target.number}. Found ${initializedMatches.length} order matches before simulation.`
       );
 
-      const { executable, inexecutable } = await this.simulate(sortedMatches, targetWithGas, current);
+      if (failedMatches.length > 0) {
+        logger.warn('execution-engine', `Block ${target.number}. Failed to prepare ${failedMatches.length} matches`);
+      }
+
+      const { executable, inexecutable } = await this.simulate(initializedMatches, targetWithGas, current);
 
       const txnMatches = executable.map((item) => item.match);
 
@@ -209,6 +251,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         receipt
       );
     } catch (err) {
+      console.error(err);
       if (err instanceof InvalidMatchError) {
         // throw the error to trigger a retry
         throw err;
@@ -899,12 +942,31 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     );
 
     if (nonNativeMatches.length > 0) {
-      const matchExternalFulfillments = await Promise.all(
+      const matchExternalFulfillmentResults = await Promise.all(
         nonNativeMatches.map((item) => item.getExternalFulfillment(this._matchExecutor.address))
       );
+
+      const { valid, numInvalid } = matchExternalFulfillmentResults.reduce(
+        (acc, item) => {
+          if (item.isValid) {
+            acc.valid.push(item.data);
+            return acc;
+          }
+          acc.numInvalid += 1;
+          this.warn(`Received invalid external fulfillment - ${item.reason}`);
+          return acc;
+        },
+        { valid: [] as { call: Call; nftsToTransfer: ChainNFTs[] }[], numInvalid: 0 }
+      );
+
+      if (numInvalid > 0) {
+        throw new Error(`Received ${numInvalid} invalid external fulfillment`);
+      }
+
+      // TODO generate fulfillments prior and filter out invalid items
       const externalFulfillments: ExternalFulfillments = {
-        calls: matchExternalFulfillments.map((item) => item.call),
-        nftsToTransfer: matchExternalFulfillments.flatMap((item) => item.nftsToTransfer)
+        calls: valid.map((item) => item.call),
+        nftsToTransfer: valid.flatMap((item) => item.nftsToTransfer)
       };
 
       const batch: Batch = {

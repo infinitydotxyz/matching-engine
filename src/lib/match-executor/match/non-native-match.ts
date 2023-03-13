@@ -4,7 +4,7 @@ import { formatUnits } from 'ethers/lib/utils';
 import { ChainId, ChainNFTs } from '@infinityxyz/lib/types/core';
 
 import { Block, BlockWithMaxFeePerGas } from '@/common/block';
-import { ValidityResultWithData } from '@/lib/utils/validity-result';
+import { ValidityResult, ValidityResultWithData } from '@/lib/utils/validity-result';
 
 import { NonNativeOrderFactory } from '../order';
 import * as Flow from '../order/flow';
@@ -56,6 +56,22 @@ export class NonNativeMatch extends OrderMatch {
     this._sourceOrder = nonNativeOrderFactory.create(nonNativeOrder);
   }
 
+  async prepare(params: { taker: string }): Promise<ValidityResult> {
+    const [sourceOrderResult, nativeMatchResult] = await Promise.all([
+      this._sourceOrder.prepareOrder(params),
+      this._nativeMatch.prepare(params)
+    ]);
+
+    if (!sourceOrderResult.isValid) {
+      return sourceOrderResult;
+    } else if (!nativeMatchResult.isValid) {
+      return nativeMatchResult;
+    }
+    return {
+      isValid: true
+    };
+  }
+
   async verifyMatchAtTarget(
     targetBlock: BlockWithMaxFeePerGas,
     currentBlock: Block
@@ -80,7 +96,7 @@ export class NonNativeMatch extends OrderMatch {
     };
   }
 
-  getExternalFulfillment(taker: string): Promise<{ call: Call; nftsToTransfer: ChainNFTs[] }> {
+  getExternalFulfillment(taker: string): Promise<ValidityResultWithData<{ call: Call; nftsToTransfer: ChainNFTs[] }>> {
     return this._sourceOrder.getExternalFulfillment(taker);
   }
 

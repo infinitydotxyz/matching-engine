@@ -4,6 +4,7 @@ import { ChainId, ChainNFTs, ChainOBOrder, OrderSource } from '@infinityxyz/lib/
 import * as Sdk from '@reservoir0x/sdk';
 
 import { OrderData } from '@/lib/orderbook/v1/types';
+import { ValidityResult } from '@/lib/utils/validity-result';
 
 import { ErrorCode } from './errors/error-code';
 import { OrderCurrencyError, OrderDynamicError, OrderError, OrderSideError } from './errors/order-error';
@@ -52,6 +53,13 @@ export abstract class SourceOrder<RawOrder = never> {
   protected abstract _checkValid(): void;
 
   abstract get isSellOrder(): boolean;
+
+  /**
+   * perform some initial required computation
+   * for the order to be valid
+   * - i.e. check if order is signed, if not request signature
+   */
+  abstract prepareOrder(params: { taker: string }): Promise<ValidityResult>;
 
   protected _baseCheck() {
     if (this.source !== 'flow') {

@@ -1,10 +1,13 @@
 import { BigNumber, ethers } from 'ethers';
+import phin from 'phin';
 
 import { ChainId, ChainNFTs } from '@infinityxyz/lib/types/core';
 import { Flow, SeaportV14 } from '@reservoir0x/sdk';
 
 import SeaportConduitControllerAbi from '@/common/abi/seaport-conduit-controller.json';
+import { logger } from '@/common/logger';
 import { OrderData } from '@/lib/orderbook/v1/types';
+import { ValidityResult, ValidityResultWithData } from '@/lib/utils/validity-result';
 
 import { NonNativeMatchExecutionInfo } from '../../match/types';
 import { Erc721Transfer, EthTransfer, TransferKind, WethTransfer } from '../../simulator/types';
@@ -27,19 +30,58 @@ export abstract class SeaportV14Order extends NonNativeOrder<SeaportV14.Types.Or
     this._order = new SeaportV14.Order(this.chainId, this._sourceParams);
   }
 
-  async getExternalFulfillment(taker: string): Promise<{ call: Call; nftsToTransfer: ChainNFTs[] }> {
-    const exchange = new SeaportV14.Exchange(this.chainId);
-    const matchParams = this._order.buildMatching();
-    const txn = await exchange.fillOrderTx(taker, this._order, matchParams);
-    const value = BigNumber.from(txn.value ?? '0');
-
-    const call: Call = {
-      to: txn.to,
-      data: txn.data,
-      value: value.toString()
+  async prepareOrder(params: { taker: string }): Promise<ValidityResult> {
+    if (!this._order.params.signature) {
+      const signatureResult = await this.getSignature(params.taker);
+      if (!signatureResult.isValid) {
+        return {
+          isValid: false,
+          isTransient: signatureResult.isTransient,
+          reason: signatureResult.reason
+        };
+      }
+    }
+    return {
+      isValid: true
     };
+  }
 
-    return Promise.resolve({ call, nftsToTransfer: this._orderData.order.nfts });
+  async getExternalFulfillment(
+    taker: string
+  ): Promise<ValidityResultWithData<{ call: Call; nftsToTransfer: ChainNFTs[] }>> {
+    try {
+      const exchange = new SeaportV14.Exchange(this.chainId);
+      const matchParams = this._order.buildMatching();
+      if (!this._order.params.signature) {
+        throw new Error(`order ${this._order.hash()} is not signed`);
+      }
+
+      const txn = await exchange.fillOrderTx(taker, this._order, matchParams);
+      const value = BigNumber.from(txn.value ?? '0');
+
+      const call: Call = {
+        to: txn.to,
+        data: txn.data,
+        value: value.toString()
+      };
+
+      return {
+        isValid: true,
+        data: {
+          call,
+          nftsToTransfer: this._orderData.order.nfts
+        }
+      };
+    } catch (err) {
+      logger.error(`seaport`, `unexpected error while getting external fulfillment data ${err}`);
+      return {
+        isValid: false,
+        isTransient: true,
+        reason: 'unexpected'
+      };
+    }
+
+    // return Promise.resolve({ call, nftsToTransfer: this._orderData.order.nfts });
   }
 
   /**
@@ -278,5 +320,67 @@ export abstract class SeaportV14Order extends NonNativeOrder<SeaportV14.Types.Or
       nonNativeExecutionTransfers: [currencyTransfer, ...erc721Transfers],
       orderIds: [this._orderData.id]
     };
+  }
+
+  public async getSignature(taker: string): Promise<ValidityResultWithData<string>> {
+    const endpoint = this.isSellOrder
+      ? 'https://api.opensea.io/v2/listings/fulfillment_data'
+      : 'https://api.opensea.io/v2/offers/fulfillment_data';
+    let chain;
+    switch (this.chainId) {
+      case 1:
+        chain = 'ethereum';
+        break;
+      case 5:
+        chain = 'goerli';
+        break;
+      default:
+        logger.error('opensea-signatures', 'Unsupported chain');
+        return {
+          isValid: false,
+          reason: `Unsupported chain`,
+          isTransient: false
+        };
+    }
+    try {
+      const response = await phin({
+        method: 'POST',
+        url: endpoint,
+        data: {
+          offer: {
+            hash: this._order.hash(),
+            chain: chain,
+            protocol_address: SeaportV14.Addresses.Exchange[this.chainId]
+          },
+          fulfiller: {
+            address: taker
+          }
+        },
+        timeout: 5_000
+      });
+
+      if (response.statusCode === 200) {
+        const data = JSON.parse(response.body.toString());
+        const order = data.fulfillment_data.orders[0];
+
+        return {
+          isValid: true,
+          data: order.signature
+        };
+      }
+
+      return {
+        isValid: false,
+        reason: `Failed to get signature: Status Code: ${response.statusCode}`,
+        isTransient: true
+      };
+    } catch (err) {
+      logger.error('opensea-signatures', `Request failed ${err}`);
+      return {
+        isValid: false,
+        reason: `Unknown error occurred`,
+        isTransient: true
+      };
+    }
   }
 }

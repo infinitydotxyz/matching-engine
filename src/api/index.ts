@@ -5,6 +5,8 @@ import { config } from '@/config';
 import executionEngine from './endpoints/execution';
 import matchingEngine from './endpoints/matching';
 
+Error.stackTraceLimit = Infinity;
+
 const fastify = Fastify({
   jsonShorthand: false,
   ignoreTrailingSlash: true,
