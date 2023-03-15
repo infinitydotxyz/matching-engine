@@ -435,7 +435,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
           if (!handledOrderIds.has(id)) {
             handledOrderIds.add(id);
             const matchedOrderId = ids.find((item) => item !== id);
-            const executionDuration = blockData.timestamp - initiatedAt;
+            const executionDuration = blockData.timestamp * 1000 - initiatedAt;
             const executedOrder: ExecutedExecutionOrder = {
               block,
               matchedOrderId: matchedOrderId ?? '',
