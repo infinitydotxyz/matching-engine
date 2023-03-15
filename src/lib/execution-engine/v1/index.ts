@@ -133,6 +133,8 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         this._matchExecutor.initiator,
         orderDurationSeconds
       );
+
+      const queue = new PQueue({ concurrency: 10 });
       const initializedMatchResults = await Promise.all(
         this._sortMatches(nonPendingMatches).map(async (item) => {
           let match: NativeMatch | NonNativeMatch;
@@ -147,7 +149,9 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
               this._matchExecutor.address
             );
           }
-          const matchValidity = await match.prepare({ taker: this._matchExecutor.address });
+          const matchValidity = await queue.add(async () => {
+            return await match.prepare({ taker: this._matchExecutor.address });
+          });
           if (matchValidity.isValid) {
             return {
               isValid: true,
@@ -168,6 +172,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
           if (item.isValid) {
             acc.initializedMatches.push(item.data);
           } else {
+            this.log(`Match ${item.data.id} is not valid - ${item.reason}`);
             acc.failedMatches.push(item.data);
           }
           return acc;
@@ -1025,7 +1030,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       'REV',
       'LIMIT',
       0,
-      500
+      100
     );
 
     const fullMatchKeys = res.map(this._storage.getFullMatchKey.bind(this._storage));

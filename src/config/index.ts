@@ -162,5 +162,10 @@ export const config = {
   },
   firebase: {
     serviceAccount: mode === 'dev' ? devServiceAccount : prodServiceAccount
+  },
+  marketplaces: {
+    opensea: {
+      apiKey: getEnvVariable('OPENSEA_API_KEY', false)
+    }
   }
 };

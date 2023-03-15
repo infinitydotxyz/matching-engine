@@ -6,6 +6,7 @@ import { Flow, Seaport } from '@reservoir0x/sdk';
 
 import SeaportConduitControllerAbi from '@/common/abi/seaport-conduit-controller.json';
 import { logger } from '@/common/logger';
+import { config } from '@/config';
 import { OrderData } from '@/lib/orderbook/v1/types';
 import { ValidityResult, ValidityResultWithData } from '@/lib/utils/validity-result';
 
@@ -321,16 +322,16 @@ export abstract class SeaportOrder extends NonNativeOrder<Seaport.Types.OrderCom
   }
 
   public async getSignature(taker: string): Promise<ValidityResultWithData<string>> {
-    const endpoint = this.isSellOrder
-      ? 'https://api.opensea.io/v2/listings/fulfillment_data'
-      : 'https://api.opensea.io/v2/offers/fulfillment_data';
     let chain;
+    let baseUrl;
     switch (this.chainId) {
       case 1:
         chain = 'ethereum';
+        baseUrl = 'https://api.opensea.io/';
         break;
       case 5:
         chain = 'goerli';
+        baseUrl = 'https://testnets-api.opensea.io/';
         break;
       default:
         logger.error('opensea-signatures', 'Unsupported chain');
@@ -340,16 +341,30 @@ export abstract class SeaportOrder extends NonNativeOrder<Seaport.Types.OrderCom
           isTransient: false
         };
     }
+
+    const endpoint = this.isSellOrder
+      ? `${baseUrl}v2/listings/fulfillment_data`
+      : `${baseUrl}v2/offers/fulfillment_data`;
+    const order = {
+      hash: this._order.hash(),
+      chain: chain,
+      protocol_address: Seaport.Addresses.Exchange[this.chainId]
+    };
+
+    const orderBodyData = this.isSellOrder
+      ? {
+          listing: order
+        }
+      : { offer: order };
     try {
       const response = await phin({
         method: 'POST',
         url: endpoint,
+        headers: {
+          'x-api-key': config.marketplaces.opensea.apiKey
+        },
         data: {
-          offer: {
-            hash: this._order.hash(),
-            chain: chain,
-            protocol_address: Seaport.Addresses.Exchange[this.chainId]
-          },
+          ...orderBodyData,
           fulfiller: {
             address: taker
           }
@@ -369,7 +384,9 @@ export abstract class SeaportOrder extends NonNativeOrder<Seaport.Types.OrderCom
 
       return {
         isValid: false,
-        reason: `Failed to get signature: Status Code: ${response.statusCode}`,
+        reason: `Failed to get signature for order ${this._order.hash()} Status Code: ${
+          response.statusCode
+        }. ${response.body.toString()}`,
         isTransient: true
       };
     } catch (err) {
