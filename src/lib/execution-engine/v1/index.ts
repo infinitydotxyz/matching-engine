@@ -1005,7 +1005,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       pipeline.zadd(this._storage.executedOrdersOrderedSetKey, expiration, match.listing.id);
       pipeline.zadd(this._storage.executedOrdersOrderedSetKey, expiration, match.offer.id);
     }
-    await pipeline.exec(); // TODO remove expired orders from the set
+    await pipeline.exec(); // joe-todo: remove expired orders from the set
   }
 
   protected async _loadPendingOrderIds() {

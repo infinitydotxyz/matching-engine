@@ -291,7 +291,7 @@ export abstract class SeaportOrder extends NonNativeOrder<Seaport.Types.OrderCom
         operator: makerConduit,
         from: taker,
         to: this._sourceParams.offerer,
-        value: value.toString() // TODO consider fees
+        value: value.toString() // joe-todo: consider fees
       };
     } else {
       currencyTransfer = {

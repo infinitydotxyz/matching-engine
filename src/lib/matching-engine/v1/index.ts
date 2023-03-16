@@ -302,7 +302,7 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
         .zrange(
           orderMatches,
           Number.MAX_SAFE_INTEGER,
-          order.params.startPriceEth, // TODO make sure we handle floating point numbers correctly
+          order.params.startPriceEth, // joe-todo: make sure we handle floating point numbers correctly
           'BYSCORE',
           'REV',
           'LIMIT',
