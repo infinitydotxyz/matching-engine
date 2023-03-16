@@ -17,11 +17,6 @@ export interface Call {
    * contract to call
    */
   to: string;
-
-  /**
-   * whether the call is sending any value
-   */
-  isPayable: boolean;
 }
 
 export interface ExternalFulfillments {

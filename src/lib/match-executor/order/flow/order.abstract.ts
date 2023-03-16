@@ -97,6 +97,13 @@ export abstract class Order extends SourceOrder<ChainOBOrder> {
     this._checkOrderKindValid();
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  prepareOrder(_params: { taker: string }): Promise<ValidityResult> {
+    return Promise.resolve({
+      isValid: true
+    });
+  }
+
   abstract _checkOrderKindValid(): void;
 
   public abstract getChainOrder(

@@ -10,6 +10,7 @@ import {
   ExecutionStatusMatchedPendingExecution,
   ExecutionStatusNotFound
 } from '@infinityxyz/lib/types/core';
+import { ONE_HOUR } from '@infinityxyz/lib/utils';
 
 import { logger } from '@/common/logger';
 import { Match } from '@/lib/match-executor/match/types';
@@ -125,9 +126,9 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
 
   executionStorage: ExecutionStorage;
 
-  constructor(protected _db: Redis, protected _chainId: ChainId) {
+  constructor(protected _db: Redis, protected _firestore: FirebaseFirestore.Firestore, protected _chainId: ChainId) {
     super();
-    this.executionStorage = new ExecutionStorage(_db, _chainId);
+    this.executionStorage = new ExecutionStorage(_db, this._firestore, this, _chainId);
   }
 
   async has(orderId: string): Promise<boolean> {
@@ -137,7 +138,6 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
 
   async save(_items: OrderData | OrderData[]): Promise<void> {
     const items = Array.isArray(_items) ? _items : [_items];
-
     for (const item of items) {
       try {
         let txn = this._db.multi();
@@ -157,6 +157,18 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
           logger.log('orderbook-storage', `Removing order ${item.id} from active orders`);
           txn.srem(this.storedOrdersSetKey, item.id).zrem(this.activeOrdersOrderedSetKey, item.id);
           txn.del(this.getFullOrderKey(item.id), this.getOrderMatchOperationMetadataKey(item.id));
+
+          /**
+           * set these to expire in one hour so we have time to process them if the order was executed
+           */
+          const pending = this.executionStorage.getPendingOrderExecutionKey(item.id);
+          const notIncluded = this.executionStorage.getNotIncludedOrderExecutionKey(item.id);
+          const executed = this.executionStorage.getExecutedOrderExecutionKey(item.id);
+          const inexecutable = this.executionStorage.getInexecutableOrderExecutionKey(item.id);
+          txn.pexpire(pending, ONE_HOUR);
+          txn.pexpire(notIncluded, ONE_HOUR);
+          txn.pexpire(executed, ONE_HOUR);
+          txn.pexpire(inexecutable, ONE_HOUR);
 
           for (const set of orderItemSets.sets) {
             txn.zrem(set, item.id);
@@ -329,10 +341,10 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
     }
   }
 
-  async getExecutionStatus(orderId: string, orderbookStorage: OrderbookStorage): Promise<ExecutionStatus> {
-    const matchOperationMetadata = await orderbookStorage.getOrderMatchOperationMetadata(orderId);
+  async getExecutionStatus(orderId: string): Promise<ExecutionStatus> {
+    const matchOperationMetadata = await this.getOrderMatchOperationMetadata(orderId);
     if (!matchOperationMetadata) {
-      const status = await orderbookStorage.getStatus(orderId);
+      const status = await this.getStatus(orderId);
 
       switch (status) {
         case 'not-found': {
@@ -374,7 +386,7 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
       return noMatchesStatus;
     }
 
-    const executionStatus = await orderbookStorage.executionStorage.getOrderExecutionStatus(orderId);
+    const executionStatus = await this.executionStorage.getOrderExecutionStatus(orderId);
     if (!executionStatus) {
       const pendingExecutionStatus: ExecutionStatusMatchedPendingExecution = {
         id: orderId,
@@ -476,5 +488,23 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
         return executedStatus;
       }
     }
+  }
+
+  async getPersistentExecutionStatus(orderIds: string[]) {
+    const refs = orderIds.map((orderId) => {
+      return this._firestore
+        .collection('executedOrders')
+        .doc(orderId) as FirebaseFirestore.DocumentReference<ExecutionStatusMatchedExecuted>;
+    });
+
+    const orderStatuses = await (
+      this._firestore.getAll(...refs) as Promise<FirebaseFirestore.DocumentSnapshot<ExecutionStatusMatchedExecuted>[]>
+    ).then((snaps: FirebaseFirestore.DocumentSnapshot<ExecutionStatusMatchedExecuted>[]) => {
+      return snaps.map((snap) => {
+        return { orderId: snap.id, status: snap.data() ?? null };
+      });
+    });
+
+    return orderStatuses;
   }
 }

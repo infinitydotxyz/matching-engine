@@ -33,3 +33,14 @@ export interface ProcessOptions {
   attempts?: number;
   delay?: number;
 }
+
+export interface HealthInfo {
+  healthStatus: {
+    status: 'healthy' | 'unhealthy';
+    err: unknown;
+  };
+  jobsProcessing: number;
+  jobCounts: {
+    waiting: number;
+  };
+}

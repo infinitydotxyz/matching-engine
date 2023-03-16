@@ -3,14 +3,16 @@ import { MetricsTime } from 'bullmq';
 import { firestore, redis, redlock } from './common/db';
 import { logger } from './common/logger';
 import { config, getNetworkConfig } from './config';
+import { validateNetworkConfig } from './config/validate-network';
+import { BlockScheduler } from './lib/block-scheduler';
 import { ExecutionEngine } from './lib/execution-engine/v1';
 import { MatchExecutor } from './lib/match-executor/match-executor';
 import { NonceProvider } from './lib/match-executor/nonce-provider/nonce-provider';
 import { OrderbookV1 } from './lib/orderbook';
 
 export const getExecutionEngine = async () => {
-  const network = await getNetworkConfig(config.env.chainId);
-  const orderbookStorage = new OrderbookV1.OrderbookStorage(redis, config.env.chainId);
+  const network = await validateNetworkConfig(getNetworkConfig(config.env.chainId));
+  const orderbookStorage = new OrderbookV1.OrderbookStorage(redis, firestore, config.env.chainId);
   const nonceProvider = new NonceProvider(
     config.env.chainId,
     network.initiator.address,
@@ -39,7 +41,7 @@ export const getExecutionEngine = async () => {
     network.broadcaster,
     {
       debug: config.env.debug,
-      concurrency: network.isForkingEnabled ? 1 : 20, // ideally this is set high enough that we never max it out
+      concurrency: 20,
       enableMetrics: {
         maxDataPoints: MetricsTime.ONE_WEEK * 2
       }
@@ -49,23 +51,38 @@ export const getExecutionEngine = async () => {
   return {
     matchExecutor,
     executionEngine,
-    nonceProvider
+    nonceProvider,
+    network
   };
 };
 
 export const startExecutionEngine = async () => {
-  const { executionEngine, nonceProvider } = await getExecutionEngine();
+  const { executionEngine, nonceProvider, network } = await getExecutionEngine();
+  const blockScheduler = new BlockScheduler(
+    redis,
+    config.env.chainId,
+    [executionEngine],
+    network.websocketProvider,
+    network.httpProvider,
+    {
+      debug: config.env.debug,
+      concurrency: 1,
+      enableMetrics: false
+    }
+  );
   try {
     const nonceProviderPromise = nonceProvider.run();
     const executionEnginePromise = executionEngine.run();
+    const blockSchedulerPromise = blockScheduler.run();
 
-    await Promise.all([nonceProviderPromise, executionEnginePromise]);
+    await Promise.all([nonceProviderPromise, executionEnginePromise, blockSchedulerPromise]);
   } catch (err) {
     logger.error(`start-execution-engine`, `Failed to start execution engine ${JSON.stringify(err)}`);
 
     await executionEngine.close().catch((err) => {
       logger.error(`start-execution-engine`, `Failed to close execution engine ${JSON.stringify(err)}`);
     });
+    await blockScheduler.close();
     nonceProvider.close();
   }
 };

@@ -21,19 +21,13 @@ export default async function register(fastify: FastifyInstance) {
   fastify.get(`${base}`, async () => {
     const { executionEngine, nonceProvider } = await getExecutionEngine();
 
-    const jobsProcessing = await executionEngine.queue.count();
-    const jobCounts = await executionEngine.queue.getJobCounts();
-    const healthCheck = await executionEngine.checkHealth();
+    const healthInfo = await executionEngine.getHealthInfo();
 
     nonceProvider.close();
     await executionEngine.close();
 
     return {
-      matchingEngine: {
-        healthStatus: healthCheck,
-        jobsProcessing: jobsProcessing,
-        jobCounts
-      }
+      executionEngine: healthInfo
     };
   });
 

@@ -8,33 +8,7 @@ import { LowLevelHelpers } from "./LowLevelHelpers.sol";
 
 import { IERC1271 } from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 import { OrderTypes } from "../libs/OrderTypes.sol";
-import { EIP2098_allButHighestBitMask,
-    OneWord, 
-    OneWordShift, 
-    BulkOrder_Typehash_Height_One,
-    BulkOrder_Typehash_Height_Two,
-    BulkOrder_Typehash_Height_Three,
-    BulkOrder_Typehash_Height_Four,
-    BulkOrder_Typehash_Height_Five,
-    BulkOrder_Typehash_Height_Six,
-    BulkOrder_Typehash_Height_Seven,
-    BulkOrder_Typehash_Height_Eight,
-    BulkOrder_Typehash_Height_Nine,
-    BulkOrder_Typehash_Height_Ten,
-    BulkOrder_Typehash_Height_Eleven,
-    BulkOrder_Typehash_Height_Twelve,
-    BulkOrder_Typehash_Height_Thirteen,
-    BulkOrder_Typehash_Height_Fourteen,
-    BulkOrder_Typehash_Height_Fifteen,
-    BulkOrder_Typehash_Height_Sixteen,
-    BulkOrder_Typehash_Height_Seventeen,
-    BulkOrder_Typehash_Height_Eighteen,
-    BulkOrder_Typehash_Height_Nineteen,
-    BulkOrder_Typehash_Height_Twenty,
-    BulkOrder_Typehash_Height_TwentyOne,
-    BulkOrder_Typehash_Height_TwentyTwo,
-    BulkOrder_Typehash_Height_TwentyThree,
-    BulkOrder_Typehash_Height_TwentyFour } from "./Constants.sol";
+import { EIP2098_allButHighestBitMask, OneWord, OneWordShift, BulkOrder_Typehash_Height_One, BulkOrder_Typehash_Height_Two, BulkOrder_Typehash_Height_Three, BulkOrder_Typehash_Height_Four, BulkOrder_Typehash_Height_Five, BulkOrder_Typehash_Height_Six, BulkOrder_Typehash_Height_Seven, BulkOrder_Typehash_Height_Eight, BulkOrder_Typehash_Height_Nine, BulkOrder_Typehash_Height_Ten, BulkOrder_Typehash_Height_Eleven, BulkOrder_Typehash_Height_Twelve, BulkOrder_Typehash_Height_Thirteen, BulkOrder_Typehash_Height_Fourteen, BulkOrder_Typehash_Height_Fifteen, BulkOrder_Typehash_Height_Sixteen, BulkOrder_Typehash_Height_Seventeen, BulkOrder_Typehash_Height_Eighteen, BulkOrder_Typehash_Height_Nineteen, BulkOrder_Typehash_Height_Twenty, BulkOrder_Typehash_Height_TwentyOne, BulkOrder_Typehash_Height_TwentyTwo, BulkOrder_Typehash_Height_TwentyThree, BulkOrder_Typehash_Height_TwentyFour } from "./Constants.sol";
 
 /**
  * @title SignatureChecker
@@ -214,8 +188,6 @@ contract SignatureChecker is LowLevelHelpers {
         return (bulkOrderHash, signature);
     }
 
-
-
     /**
      * @dev Internal pure function to look up one of twenty-four potential bulk
      *      order typehash constants based on the height of the bulk order tree.
@@ -228,11 +200,9 @@ contract SignatureChecker is LowLevelHelpers {
      * @return _typeHash The EIP-712 typehash for the bulk order type with the
      *                   given height.
      */
-    function _lookupBulkOrderTypehash(uint256 _treeHeight)
-        internal
-        pure
-        returns (bytes32 _typeHash)
-    {
+    function _lookupBulkOrderTypehash(
+        uint256 _treeHeight
+    ) internal pure returns (bytes32 _typeHash) {
         // Utilize assembly to efficiently retrieve correct bulk order typehash.
         assembly {
             // Use a Yul function to enable use of the `leave` keyword

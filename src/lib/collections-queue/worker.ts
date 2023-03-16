@@ -1,4 +1,5 @@
 import { Job } from 'bullmq';
+import 'module-alias/register';
 
 import { logger } from '@/common/logger';
 import { getProcesses } from '@/lib/collections-queue/start-collection';

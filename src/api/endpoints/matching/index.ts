@@ -2,9 +2,13 @@ import { ethers } from 'ethers';
 import { FastifyInstance } from 'fastify';
 import PQueue from 'p-queue';
 
+import { ExecutionStatusMatchedExecuted } from '@infinityxyz/lib/types/core';
+
 import { logger } from '@/common/logger';
 import { config } from '@/config';
 import { getOrderbook, getProcesses, startCollection } from '@/lib/collections-queue/start-collection';
+
+import { getExecutionEngine } from '../../../start-execution-engine';
 
 const base = '/matching';
 
@@ -27,35 +31,34 @@ export default async function register(fastify: FastifyInstance) {
     const collection = _collection.toLowerCase();
 
     const processes = getProcesses(collection);
+    const { executionEngine, nonceProvider } = await getExecutionEngine();
+    const { orderbookStorage } = getOrderbook();
 
-    const matchingEngineJobsProcessing = await processes.matchingEngine.queue.count();
-    const matchingEngineJobCounts = await processes.matchingEngine.queue.getJobCounts();
-
-    const orderRelayJobsProcessing = await processes.orderRelay.queue.count();
-    const orderRelayJobCounts = await processes.orderRelay.queue.getJobCounts();
-
-    const matchingEngineHealthPromise = processes.matchingEngine.checkHealth();
-    const orderRelayHealthPromise = processes.orderRelay.checkHealth();
-
-    const [matchingEngineHealth, orderRelayHealth] = await Promise.all([
-      matchingEngineHealthPromise,
-      orderRelayHealthPromise
-    ]);
+    const matchingEngineHealthPromise = processes.matchingEngine.getHealthInfo();
+    const orderRelayHealthPromise = processes.orderRelay.getHealthInfo();
+    const executionEngineHealthPromise = executionEngine.getHealthInfo();
+    const [matchingEngineHealth, orderRelayHealth, executionEngineHealth, matchAverages, executionAverages] =
+      await Promise.all([
+        matchingEngineHealthPromise,
+        orderRelayHealthPromise,
+        executionEngineHealthPromise,
+        orderbookStorage.executionStorage.getAverageMatchDuration(collection),
+        orderbookStorage.executionStorage.getAverageExecutionDuration(collection)
+      ]);
 
     await processes.matchingEngine.close();
     await processes.orderRelay.close();
+    nonceProvider.close();
+    await executionEngine.close();
 
     return {
-      isSynced: orderRelayJobCounts.waiting < 500 && matchingEngineJobCounts.waiting < 500,
-      matchingEngine: {
-        healthStatus: matchingEngineHealth,
-        jobsProcessing: matchingEngineJobsProcessing,
-        jobCounts: matchingEngineJobCounts
-      },
-      orderRelay: {
-        healthStatus: orderRelayHealth,
-        jobsProcessing: orderRelayJobsProcessing,
-        jobCounts: orderRelayJobCounts
+      isSynced: orderRelayHealth.jobCounts.waiting < 100 && matchingEngineHealth.jobCounts.waiting < 100,
+      matchingEngine: matchingEngineHealth,
+      orderRelay: orderRelayHealth,
+      executionEngine: executionEngineHealth,
+      averages: {
+        matchingEngine: matchAverages,
+        executionEngine: executionAverages
       }
     };
   });
@@ -100,14 +103,22 @@ export default async function register(fastify: FastifyInstance) {
 
     const { orderbookStorage } = getOrderbook();
 
-    const status = await orderbookStorage.getExecutionStatus(orderId, orderbookStorage);
+    const persistentStatus = await orderbookStorage.getPersistentExecutionStatus([orderId]);
+    if (persistentStatus[0]?.status) {
+      return {
+        status: persistentStatus[0].status
+      };
+    }
+
+    const status = await orderbookStorage.getExecutionStatus(orderId);
+
     return {
       status
     };
   });
 
   fastify.post(`${base}/orders`, async (request) => {
-    const orderIds =
+    const orderIds: string[] =
       typeof request.body == 'object' && request.body && 'orders' in request.body && Array.isArray(request.body.orders)
         ? request.body.orders
         : [];
@@ -121,11 +132,18 @@ export default async function register(fastify: FastifyInstance) {
 
     const queue = new PQueue({ concurrency: 20 });
 
-    const statuses = orderIds.map(async (orderId: string) => {
-      return await queue.add(async () => {
-        return await orderbookStorage.getExecutionStatus(orderId, orderbookStorage);
-      });
-    });
+    const partialOrderStatuses = await orderbookStorage.getPersistentExecutionStatus(orderIds);
+
+    const statuses = partialOrderStatuses.map(
+      async (item: { orderId: string; status: ExecutionStatusMatchedExecuted | null }) => {
+        return await queue.add(async () => {
+          if (item.status) {
+            return item.status;
+          }
+          return await orderbookStorage.getExecutionStatus(item.orderId);
+        });
+      }
+    );
 
     return {
       data: await Promise.all(statuses)

@@ -4,7 +4,7 @@ import Redis from 'ioredis';
 
 import { logger } from '@/common/logger';
 
-import { JobDataType, ProcessJobResult, ProcessOptions, WithTiming } from './types';
+import { HealthInfo, JobDataType, ProcessJobResult, ProcessOptions, WithTiming } from './types';
 
 export abstract class AbstractProcess<T extends { id: string }, U> extends EventEmitter {
   protected _worker: Worker<JobDataType<T>, WithTiming<U> | WithTiming<ProcessJobResult>>;
@@ -69,8 +69,14 @@ export abstract class AbstractProcess<T extends { id: string }, U> extends Event
 
   abstract processJob(job: Job<T, U>): Promise<U>;
 
-  async add(job: T | T[]): Promise<void> {
+  async add(job: T, id?: string): Promise<void>;
+  async add(jobs: T[]): Promise<void>;
+  async add(job: T | T[], id?: string): Promise<void> {
     const arr = Array.isArray(job) ? job : [job];
+    if (Array.isArray(job) && id) {
+      throw new Error(`Can only specify an id for a single job`);
+    }
+
     const jobs: {
       name: string;
       data: JobDataType<T>;
@@ -183,7 +189,58 @@ export abstract class AbstractProcess<T extends { id: string }, U> extends Event
     };
   }
 
-  public async checkHealth() {
+  public async getHealthInfo() {
+    try {
+      const healthInfo = await this._getCachedHealthInfo();
+      if (healthInfo) {
+        return healthInfo;
+      }
+
+      return await this._getHealthInfo();
+    } catch (err) {
+      return {
+        healthStatus: {
+          status: 'unhealthy',
+          err
+        },
+        jobsProcessing: 0,
+        jobCounts: {
+          waiting: 0
+        }
+      };
+    }
+  }
+
+  protected get _healthInfoCacheKey() {
+    return `${this.queueName}:health:cache`;
+  }
+
+  protected async _getHealthInfo() {
+    const [jobsProcessing, jobCounts, healthCheck] = await Promise.all([
+      this.queue.count(),
+      this.queue.getJobCounts(),
+      this.checkHealth()
+    ]);
+
+    const healthInfo: HealthInfo = {
+      healthStatus: healthCheck,
+      jobCounts: jobCounts as HealthInfo['jobCounts'],
+      jobsProcessing
+    };
+    await this._db.set(this._healthInfoCacheKey, JSON.stringify(healthInfo), 'PX', 30_000);
+    return healthInfo;
+  }
+
+  protected async _getCachedHealthInfo() {
+    try {
+      const cachedInfoString = await this._db.get(this._healthInfoCacheKey);
+      return JSON.parse(cachedInfoString ?? '') as HealthInfo;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  public async checkHealth(): Promise<HealthInfo['healthStatus']> {
     const queueEvents = new QueueEvents(this.queueName, {
       connection: this._db.duplicate(),
       autorun: true
@@ -216,7 +273,8 @@ export abstract class AbstractProcess<T extends { id: string }, U> extends Event
       }
       await queueEvents.close();
       return {
-        status: 'healthy'
+        status: 'healthy',
+        err: undefined
       };
     } catch (err) {
       await queueEvents.close();

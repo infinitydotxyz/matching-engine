@@ -18,16 +18,16 @@ export class MatchExecutor {
   constructor(
     public chainId: ChainId,
     public address: string,
-    public owner: ethers.Wallet,
+    public initiator: ethers.Wallet,
     public nonceProvider: NonceProvider
   ) {
-    this._contract = new ethers.Contract(this.address, MatchExecutorAbi, this.owner);
+    this._contract = new ethers.Contract(this.address, MatchExecutorAbi, this.initiator);
   }
 
   getNativeTxn(matches: MatchOrders[], targetBlock: BlockWithGas, gasLimit: BigNumberish) {
     const encoded = this._contract.interface.encodeFunctionData('executeNativeMatches', [matches]);
     const txn = {
-      from: this.owner.address.toLowerCase(),
+      from: this.initiator.address.toLowerCase(),
       to: this.address,
       maxFeePerGas: targetBlock.maxFeePerGas,
       maxPriorityFeePerGas: targetBlock.maxPriorityFeePerGas,
@@ -41,7 +41,7 @@ export class MatchExecutor {
   getBrokerTxn(batch: Batch, targetBlock: BlockWithGas, gasLimit: BigNumberish) {
     const encoded = this._contract.interface.encodeFunctionData('executeBrokerMatches', [[batch]]);
     const txn = {
-      from: this.owner.address.toLowerCase(),
+      from: this.initiator.address.toLowerCase(),
       to: this.address,
       maxFeePerGas: targetBlock.maxFeePerGas,
       maxPriorityFeePerGas: targetBlock.maxPriorityFeePerGas,

@@ -8,8 +8,8 @@ import { getExchangeAddress } from '@infinityxyz/lib/utils';
 import { Erc721 } from '@reservoir0x/sdk/dist/common/helpers';
 
 import { logger } from '@/common/logger';
-import { ForkedNetworkBroadcaster } from '@/lib/broadcaster';
 import { FlashbotsBroadcaster } from '@/lib/broadcaster/flashbots-broadcaster';
+import { ForkedNetworkBroadcaster } from '@/lib/broadcaster/forked-network-broadcaster';
 
 import * as devServiceAccount from './creds/nftc-dev.json';
 import * as prodServiceAccount from './creds/nftc-prod.json';
@@ -35,12 +35,31 @@ const getMode = (): 'dev' | 'prod' => {
   throw new Error(`Invalid env mode ${env}`);
 };
 
+const isDeployed = Number(getEnvVariable('IS_DEPLOYED', false)) === 1;
+
 const isForkingEnabled = Number(getEnvVariable('ENABLE_FORKING', false)) === 1;
-if (isForkingEnabled) {
-  dotenv({ path: '.forked.env', override: true });
-}
+
 const mode = getMode();
 const chainId = getEnvVariable('CHAIN_ID', true) as ChainId;
+
+const getChainName = (): 'mainnet' | 'goerli' => {
+  switch (chainId) {
+    case ChainId.Mainnet:
+      return 'mainnet';
+    case ChainId.Goerli:
+      return 'goerli';
+    default:
+      throw new Error(`Invalid chain id ${chainId}`);
+  }
+};
+
+const chainConfig = `.env.${mode}.${getChainName()}.${isDeployed ? 'deploy' : 'local'}`;
+logger.log('config', `Loading config from ${chainConfig}`);
+dotenv({ path: chainConfig, override: true });
+if (isForkingEnabled) {
+  dotenv({ path: '.forked.env', override: true });
+  logger.log('config', `Loading forked config ${chainConfig}`);
+}
 
 export const getNetworkConfig = async (chainId: ChainId) => {
   const chainIdInt = parseInt(chainId, 10);
@@ -129,17 +148,24 @@ export const config = {
     },
     api: {
       readonly: Number(getEnvVariable('API_READONLY', false)) === 1,
-      port: Number(getEnvVariable('PORT', false)) || 8080
+      port: Number(getEnvVariable('PORT', false)) || 8080,
+      apiKey: getEnvVariable('API_KEY', false).toLowerCase()
     }
   },
   broadcasting: {
     blockOffset: 2,
-    priorityFee: chainId === ChainId.Mainnet ? parseUnits('3', 'gwei') : parseUnits('0.01', 'gwei')
+    priorityFee: parseUnits('3', 'gwei') // TODO set this programmatically
   },
   redis: {
-    connectionUrl: getEnvVariable('REDIS_URL')
+    connectionUrl: getEnvVariable('REDIS_URL'),
+    readConnectionUrl: getEnvVariable('READ_REDIS_URL')
   },
   firebase: {
     serviceAccount: mode === 'dev' ? devServiceAccount : prodServiceAccount
+  },
+  marketplaces: {
+    opensea: {
+      apiKey: getEnvVariable('OPENSEA_API_KEY', false)
+    }
   }
 };

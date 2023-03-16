@@ -1,16 +1,14 @@
 import { BigNumber, ethers } from 'ethers';
-
-
+import phin from 'phin';
 
 import { ChainId, ChainNFTs } from '@infinityxyz/lib/types/core';
-import { Common, Flow, Seaport } from '@reservoir0x/sdk';
-
-
+import { Flow, Seaport } from '@reservoir0x/sdk';
 
 import SeaportConduitControllerAbi from '@/common/abi/seaport-conduit-controller.json';
+import { logger } from '@/common/logger';
+import { config } from '@/config';
 import { OrderData } from '@/lib/orderbook/v1/types';
-
-
+import { ValidityResult, ValidityResultWithData } from '@/lib/utils/validity-result';
 
 import { NonNativeMatchExecutionInfo } from '../../match/types';
 import { Erc721Transfer, EthTransfer, TransferKind, WethTransfer } from '../../simulator/types';
@@ -18,7 +16,6 @@ import { Call } from '../../types';
 import { ErrorCode } from '../errors/error-code';
 import { OrderCurrencyError, OrderDynamicError, OrderError, OrderKindError } from '../errors/order-error';
 import { NonNativeOrder } from '../non-native-order';
-
 
 export abstract class SeaportOrder extends NonNativeOrder<Seaport.Types.OrderComponents> {
   readonly source = 'seaport';
@@ -34,71 +31,62 @@ export abstract class SeaportOrder extends NonNativeOrder<Seaport.Types.OrderCom
     this._order = new Seaport.Order(this.chainId, this._sourceParams);
   }
 
-  async getExternalFulfillment(taker: string): Promise<{ call: Call; nftsToTransfer: ChainNFTs[] }> {
-    const exchange = new Seaport.Exchange(this.chainId);
-    const matchParams = this._order.buildMatching();
-    const txn = await exchange.fillOrderTx(taker, this._order, matchParams);
-    const value = BigNumber.from(txn.value ?? '0');
-
-    const call: Call = {
-      to: txn.to,
-      data: txn.data,
-      value: value.toString(),
-      isPayable: value.gt(0)
+  async prepareOrder(params: { taker: string }): Promise<ValidityResult> {
+    if (!this._order.params.signature) {
+      const signatureResult = await this.getSignature(params.taker);
+      if (!signatureResult.isValid) {
+        return {
+          isValid: false,
+          isTransient: signatureResult.isTransient,
+          reason: signatureResult.reason
+        };
+      }
+    }
+    return {
+      isValid: true
     };
+  }
 
-    return Promise.resolve({ call, nftsToTransfer: this._orderData.order.nfts });
+  async getExternalFulfillment(
+    taker: string
+  ): Promise<ValidityResultWithData<{ call: Call; nftsToTransfer: ChainNFTs[] }>> {
+    try {
+      const exchange = new Seaport.Exchange(this.chainId);
+      const matchParams = this._order.buildMatching();
+      if (!this._order.params.signature) {
+        throw new Error(`order ${this._order.hash()} is not signed`);
+      }
+
+      const txn = await exchange.fillOrderTx(taker, this._order, matchParams);
+      const value = BigNumber.from(txn.value ?? '0');
+
+      const call: Call = {
+        to: txn.to,
+        data: txn.data,
+        value: value.toString()
+      };
+
+      return {
+        isValid: true,
+        data: {
+          call,
+          nftsToTransfer: this._orderData.order.nfts
+        }
+      };
+    } catch (err) {
+      logger.error(`seaport`, `unexpected error while getting external fulfillment data ${err}`);
+      return {
+        isValid: false,
+        isTransient: true,
+        reason: 'unexpected'
+      };
+    }
   }
 
   /**
    * perform order kind specific checks on the order
    */
   protected abstract _checkOrderKindValid(): void;
-
-  protected getExecutionTransfers(taker: string, exchangeAddress: string) {
-    const currency = this.currency;
-    const amount = this.startPrice;
-
-    let currencyTransfer: EthTransfer | WethTransfer;
-    if (currency === Common.Addresses.Eth[this.chainId]) {
-      const ethTransfer: EthTransfer = {
-        kind: TransferKind.ETH,
-        value: amount,
-        from: this.maker,
-        to: taker
-      };
-      currencyTransfer = ethTransfer;
-    } else if (currency === Common.Addresses.Weth[this.chainId]) {
-      const wethTransfer: WethTransfer = {
-        kind: TransferKind.WETH,
-        value: amount,
-        from: this.maker,
-        to: taker,
-        contract: currency,
-        operator: exchangeAddress
-      };
-      currencyTransfer = wethTransfer;
-    } else {
-      throw new Error('Invalid currency');
-    }
-
-    const tokens = this.nfts;
-
-    const erc721Transfers: Erc721Transfer[] = tokens.flatMap(({ collection, tokens }) => {
-      return tokens.map((token) => {
-        const erc721Transfer: Erc721Transfer = {
-          kind: TransferKind.ERC721,
-          from: this.maker,
-          to: taker,
-          contract: collection,
-          tokenId: token.tokenId
-        };
-        return erc721Transfer;
-      });
-    });
-
-    return [currencyTransfer, ...erc721Transfers];
-  }
 
   public get isSellOrder() {
     return this._orderData.order.isSellOrder;
@@ -269,7 +257,7 @@ export abstract class SeaportOrder extends NonNativeOrder<Seaport.Types.OrderCom
     return orderItems;
   }
 
-  async getExecutionInfo(taker: string): Promise<Omit<NonNativeMatchExecutionInfo, 'nativeExecutionTransfers'>> {
+  async getOperator() {
     const conduit = Seaport.Addresses.ConduitController[this.chainId];
     const conduitController = new ethers.Contract(conduit, SeaportConduitControllerAbi, this._provider);
 
@@ -284,6 +272,12 @@ export abstract class SeaportOrder extends NonNativeOrder<Seaport.Types.OrderCom
               return result.conduit.toLowerCase();
             }
           });
+
+    return makerConduit;
+  }
+
+  async getExecutionInfo(taker: string): Promise<Omit<NonNativeMatchExecutionInfo, 'nativeExecutionTransfers'>> {
+    const makerConduit = await this.getOperator();
 
     const isWeth = this.currency === this.weth;
 
@@ -325,5 +319,83 @@ export abstract class SeaportOrder extends NonNativeOrder<Seaport.Types.OrderCom
       nonNativeExecutionTransfers: [currencyTransfer, ...erc721Transfers],
       orderIds: [this._orderData.id]
     };
+  }
+
+  public async getSignature(taker: string): Promise<ValidityResultWithData<string>> {
+    let chain;
+    let baseUrl;
+    switch (this.chainId) {
+      case 1:
+        chain = 'ethereum';
+        baseUrl = 'https://api.opensea.io/';
+        break;
+      case 5:
+        chain = 'goerli';
+        baseUrl = 'https://testnets-api.opensea.io/';
+        break;
+      default:
+        logger.error('opensea-signatures', 'Unsupported chain');
+        return {
+          isValid: false,
+          reason: `Unsupported chain`,
+          isTransient: false
+        };
+    }
+
+    const endpoint = this.isSellOrder
+      ? `${baseUrl}v2/listings/fulfillment_data`
+      : `${baseUrl}v2/offers/fulfillment_data`;
+    const order = {
+      hash: this._order.hash(),
+      chain: chain,
+      protocol_address: Seaport.Addresses.Exchange[this.chainId]
+    };
+
+    const orderBodyData = this.isSellOrder
+      ? {
+          listing: order
+        }
+      : { offer: order };
+    try {
+      const response = await phin({
+        method: 'POST',
+        url: endpoint,
+        headers: {
+          'x-api-key': config.marketplaces.opensea.apiKey
+        },
+        data: {
+          ...orderBodyData,
+          fulfiller: {
+            address: taker
+          }
+        },
+        timeout: 5_000
+      });
+
+      if (response.statusCode === 200) {
+        const data = JSON.parse(response.body.toString());
+        const order = data.fulfillment_data.orders[0];
+
+        return {
+          isValid: true,
+          data: order.signature
+        };
+      }
+
+      return {
+        isValid: false,
+        reason: `Failed to get signature for order ${this._order.hash()} Status Code: ${
+          response.statusCode
+        }. ${response.body.toString()}`,
+        isTransient: true
+      };
+    } catch (err) {
+      logger.error('opensea-signatures', `Request failed ${err}`);
+      return {
+        isValid: false,
+        reason: `Unknown error occurred`,
+        isTransient: true
+      };
+    }
   }
 }

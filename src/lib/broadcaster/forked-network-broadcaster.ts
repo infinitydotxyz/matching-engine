@@ -9,6 +9,8 @@ export type Options = {
 };
 
 export class ForkedNetworkBroadcaster extends Broadcaster<Options> {
+  isForked = true;
+
   async broadcast(txn: Omit<Eip1559Txn, 'type' | 'chainId'>, options: BroadcastOptions) {
     const fullTxn = await this._getFullTxn(txn);
 

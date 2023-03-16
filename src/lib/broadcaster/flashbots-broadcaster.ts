@@ -5,6 +5,7 @@ import {
   FlashbotsBundleResolution,
   FlashbotsBundleTransaction
 } from '@flashbots/ethers-provider-bundle';
+import { getCallTrace } from '@georgeroman/evm-tx-simulator';
 
 import { logger } from '@/common/logger';
 
@@ -20,6 +21,8 @@ export class FlashbotsBroadcaster extends Broadcaster<Options> {
   protected get _flashbotsProvider() {
     return this._options.flashbotsProvider;
   }
+
+  isForked = false;
 
   protected get _authSigner() {
     return this._options.authSigner;
@@ -43,26 +46,53 @@ export class FlashbotsBroadcaster extends Broadcaster<Options> {
       transaction: fbTxn,
       signer: options.signer
     };
-    const signedBundle = await this._flashbotsProvider.signBundle([bundleTxn]);
-    const simulationResult = await this._flashbotsProvider.simulate(signedBundle, options.targetBlock.number);
 
-    if ('error' in simulationResult) {
-      throw new Error(simulationResult.error.message);
+    let signedBundle;
+    try {
+      signedBundle = await this._flashbotsProvider.signBundle([bundleTxn]);
+    } catch (err) {
+      logger.error('flashbots-broadcaster', `Failed to sign bundle ${JSON.stringify(err, null, 2)}`);
+      throw err;
     }
-    const totalGasUsed = simulationResult.totalGasUsed;
-    const simulatedMaxFeePerGas = simulationResult.coinbaseDiff.div(totalGasUsed);
 
-    for (const item of simulationResult.results) {
-      if ('revert' in item) {
-        throw new Error(`Transaction ${item.txHash} Reverted with: ${item.revert}`);
+    try {
+      const simulationResult = await this._flashbotsProvider.simulate(signedBundle, options.targetBlock.number);
+
+      if ('error' in simulationResult) {
+        // debug call
+        const result = await getCallTrace(
+          {
+            ...fbTxn,
+            from: await options.signer.getAddress()
+          },
+          this._provider
+        );
+
+        console.error('Flashbots simulation failed');
+        console.log(JSON.stringify(result, null, 2));
+
+        throw new Error(simulationResult.error.message);
       }
+      const totalGasUsed = simulationResult.totalGasUsed;
+      const simulatedMaxFeePerGas = simulationResult.coinbaseDiff.div(totalGasUsed);
+
+      for (const item of simulationResult.results) {
+        if ('revert' in item) {
+          console.log(JSON.stringify(simulationResult.results, null, 2));
+          throw new Error(`Transaction ${item.txHash} Reverted with: ${item.revert}`);
+        }
+      }
+
+      logger.log(
+        'flashbots-broadcaster',
+        `Simulated txn maxFeePerGas: ${simulatedMaxFeePerGas.toString()} gasUsed: ${totalGasUsed.toString()}`
+      );
+    } catch (err) {
+      logger.error('flashbots-broadcaster', 'Error while simulating');
+      console.log(JSON.stringify(err, null, 2));
     }
 
-    logger.log(
-      'flashbots-broadcaster',
-      `Simulated txn maxFeePerGas: ${simulatedMaxFeePerGas.toString()} gasUsed: ${totalGasUsed.toString()}`
-    );
-
+    logger.log('flashbots-broadcaster', `Broadcasting txn ${fbTxn.nonce} to flashbots`);
     const bundleResponse = await this._flashbotsProvider.sendRawBundle(signedBundle, options.targetBlock.number, {
       revertingTxHashes: this._options.allowReverts ? signedBundle : []
     });

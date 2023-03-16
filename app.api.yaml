@@ -1,4 +1,4 @@
-service: matching-engine
+service: matching-engine-api
 runtime: nodejs
 env: flex
 entrypoint: npm run start
@@ -9,12 +9,16 @@ automatic_scaling:
   cpu_utilization:
     target_utilization: 0.5
 resources:
-  cpu: 32
-  memory_gb: 64
-  disk_size_gb: 20
+  cpu: 1
+  memory_gb: 4
+  disk_size_gb: 10
 readiness_check:
   app_start_timeout_sec: 1800
 env_variables:
   MATCHING_ENGINE: 1
+  EXECUTION_ENGINE: 1
+  API_READONLY: 1
+  CHAIN_ID: 1
+  IS_DEPLOYED: 1
 vpc_access_connector:
   name: projects/nftc-infinity/locations/us-east1/connectors/cloud-sql-vpc-connector

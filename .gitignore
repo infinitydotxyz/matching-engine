@@ -1,6 +1,7 @@
 .env
 .forked.env
 .*.env
+.env.*
 
 src/config/creds/**/*
 

@@ -9,7 +9,8 @@
     "clean": "rimraf ./dist",
     "lint": "eslint . --ext .ts,.js",
     "format": "prettier -w ./src",
-    "start": "node --max-old-space-size=4096 -r dotenv/config -r module-alias/register ./dist/bootstrap.js",
+    "start": "node --max-old-space-size=4096 -r dotenv/config ./dist/bootstrap.js",
+    "start:goerli": "npm run build && npx cross-env CHAIN_ID=5 node --max-old-space-size=4096 -r dotenv/config -r module-alias/register ./dist/bootstrap.js",
     "start:api:dev": "npm run build && npx cross-env ENABLE_FORKING=1 node --max-old-space-size=4096 -r dotenv/config -r module-alias/register ./dist/bootstrap.js",
     "start:forked": "npx cross-env ENABLE_FORKING=1 node -r dotenv/config -r module-alias/register ./dist/index.js",
     "start:dev": "npx cross-env ENABLE_FORKING=1 ts-node -r dotenv/config ./src/index.ts",
@@ -23,13 +24,16 @@
     "pre:push": "npm run format && npm run lint && npm run build",
     "test": "jest",
     "build:contracts": "forge build",
-    "create-match": "npx cross-env ENABLE_FORKING=1 ts-node -r dotenv/config ./src/create-match.ts"
+    "create-match": "npx cross-env ENABLE_FORKING=1 ts-node -r dotenv/config ./src/create-match.ts",
+    "deploy:prod:goerli:me": "npm run build && gcloud app deploy -q --appyaml=app.matching-engine.goerli.yaml --project=nftc-infinity",
+    "deploy:prod:goerli:ee": "npm run build && gcloud app deploy -q --appyaml=app.execution-engine.goerli.yaml --project=nftc-infinity",
+    "deploy:prod:goerli:api": "npm run build && gcloud app deploy -q --appyaml=app.api.goerli.yaml --project=nftc-infinity"
   },
   "dependencies": {
     "@flashbots/ethers-provider-bundle": "^0.6.1",
     "@georgeroman/evm-tx-simulator": "^0.0.12",
-    "@infinityxyz/lib": "^1.334.1",
-    "@reservoir0x/sdk": "0.0.323",
+    "@infinityxyz/lib": "^1.333.2",
+    "@reservoir0x/sdk": "0.0.324",
     "bullmq": "^3.4.1",
     "dotenv": "^16.0.1",
     "ethers": "^5.7.2",
@@ -39,6 +43,7 @@
     "module-alias": "^2.2.2",
     "nanoid": "^3.3.4",
     "p-queue": "^6.6.2",
+    "phin": "^3.7.0",
     "redlock": "^5.0.0-beta.2",
     "winston": "^3.8.2"
   },

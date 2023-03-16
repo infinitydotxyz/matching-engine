@@ -28,6 +28,8 @@ export abstract class Broadcaster<T> {
     return parseInt(this._chainId, 10);
   }
 
+  abstract isForked: boolean;
+
   constructor(
     protected _chainId: ChainId,
     protected underlyingChainId: number,

@@ -5,7 +5,7 @@ import { getExchangeAddress, orderHash } from '@infinityxyz/lib/utils';
 import { Common } from '@reservoir0x/sdk';
 
 import { Block, BlockWithMaxFeePerGas } from '@/common/block';
-import { ValidityResultWithData } from '@/lib/utils/validity-result';
+import { ValidityResult, ValidityResultWithData } from '@/lib/utils/validity-result';
 
 import * as Flow from '../order/flow';
 import { Erc721Transfer, EthTransfer, TransferKind, WethTransfer } from '../simulator/types';
@@ -21,6 +21,22 @@ export class NativeMatch extends OrderMatch {
     super(match);
     this._listing = orderFactory.createOrder(match.listing);
     this._offer = orderFactory.createOrder(match.offer);
+  }
+
+  async prepare(params: { taker: string }): Promise<ValidityResult> {
+    const [listingResult, offerResult] = await Promise.all([
+      this._listing.prepareOrder(params),
+      this._offer.prepareOrder(params)
+    ]);
+
+    if (!listingResult.isValid) {
+      return listingResult;
+    } else if (!offerResult.isValid) {
+      return offerResult;
+    }
+    return {
+      isValid: true
+    };
   }
 
   async getMatchOrders(currentBlockTimestamp: number): Promise<MatchOrders> {

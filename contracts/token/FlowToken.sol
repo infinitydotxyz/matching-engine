@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT
-// solhint-disable not-rely-on-time
 pragma solidity 0.8.14;
 
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";

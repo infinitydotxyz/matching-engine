@@ -15,7 +15,7 @@ export class OrderFactory {
     protected _provider: ethers.providers.StaticJsonRpcProvider,
     protected _nonceProvider: NonceProvider,
     protected _matchExecutorAddress: string,
-    protected _matchExecutorOwner: ethers.Wallet,
+    protected _matchExecutorInitiator: ethers.Wallet,
     protected _orderDurationSeconds: number
   ) {}
 
@@ -27,7 +27,7 @@ export class OrderFactory {
         this._provider,
         this._nonceProvider,
         this._matchExecutorAddress,
-        this._matchExecutorOwner,
+        this._matchExecutorInitiator,
         this._orderDurationSeconds
       );
     }

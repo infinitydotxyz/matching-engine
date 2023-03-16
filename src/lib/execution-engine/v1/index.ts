@@ -1,23 +1,31 @@
-import { Job } from 'bullmq';
+import { BulkJobOptions, Job } from 'bullmq';
 import { BigNumber, BigNumberish, ethers } from 'ethers';
 import { formatEther, formatUnits } from 'ethers/lib/utils';
 import Redis from 'ioredis';
 import PQueue from 'p-queue';
-import Redlock, { ExecutionError, RedlockAbortSignal } from 'redlock';
+import Redlock, { RedlockAbortSignal } from 'redlock';
 
-
-
-import { FlashbotsBundleProvider } from '@flashbots/ethers-provider-bundle';
 import { getCallTrace, parseCallTrace } from '@georgeroman/evm-tx-simulator';
 import { ERC20ABI, ERC721ABI } from '@infinityxyz/lib/abi';
-import { ChainId } from '@infinityxyz/lib/types/core';
+import { ChainId, ChainNFTs } from '@infinityxyz/lib/types/core';
 import { ONE_MIN } from '@infinityxyz/lib/utils';
 import { Common } from '@reservoir0x/sdk';
 
-
-
-import { Block, BlockWithGas, BlockWithMaxFeePerGas, ExecutedBlock, NotIncludedBlock, PendingExecutionBlock, SkippedExecutionBlock } from '@/common/block';
-import { ExecutedExecutionOrder, InexecutableExecutionOrder, NotIncludedExecutionOrder, PendingExecutionOrder } from '@/common/execution-order';
+import {
+  Block,
+  BlockWithGas,
+  BlockWithMaxFeePerGas,
+  ExecutedBlock,
+  NotIncludedBlock,
+  PendingExecutionBlock,
+  SkippedExecutionBlock
+} from '@/common/block';
+import {
+  ExecutedExecutionOrder,
+  InexecutableExecutionOrder,
+  NotIncludedExecutionOrder,
+  PendingExecutionOrder
+} from '@/common/execution-order';
 import { logger } from '@/common/logger';
 import { config } from '@/config';
 import { Broadcaster } from '@/lib/broadcaster/broadcaster.abstract';
@@ -28,12 +36,13 @@ import { Match, NativeMatchExecutionInfo, NonNativeMatchExecutionInfo } from '@/
 import { OrderFactory } from '@/lib/match-executor/order/flow';
 import { OrderExecutionSimulator } from '@/lib/match-executor/simulator/order-execution-simulator';
 import { ExecutionState, Transfer, TransferKind } from '@/lib/match-executor/simulator/types';
-import { Batch, ExternalFulfillments, MatchOrders } from '@/lib/match-executor/types';
+import { Batch, Call, ExternalFulfillments, MatchOrders } from '@/lib/match-executor/types';
 import { OrderbookStorage } from '@/lib/orderbook/v1';
 import { AbstractProcess } from '@/lib/process/process.abstract';
-import { ProcessOptions } from '@/lib/process/types';
+import { JobDataType, ProcessOptions } from '@/lib/process/types';
 import { Invalid, ValidWithData, ValidityResultWithData } from '@/lib/utils/validity-result';
 
+import { InvalidMatchError } from '../errors';
 
 export type ExecutionEngineJob = {
   id: string;
@@ -47,6 +56,8 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
   protected _version: string;
 
   protected _startTimestampSeconds: number;
+
+  protected _maxAttempts = 3;
 
   constructor(
     protected _chainId: ChainId,
@@ -67,30 +78,13 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
   }
 
   public async run(): Promise<void> {
-    const blockListenerLockKey = `execution-engine:chain:${config.env.chainId}:lock`;
-    const lockDuration = 15_000;
     /**
      * start processing jobs from the queue
      */
     const runPromise = super._run().catch((err: Error) => {
       logger.error('execution-engine', ` Execution engine - Unexpected error: ${err.message}`);
     });
-    const listenPromise = this._redlock
-      .using([blockListenerLockKey], lockDuration, async (signal) => {
-        /**
-         * listen for blocks
-         */
-        await this._listen(signal);
-      })
-      .catch((err) => {
-        if (err instanceof ExecutionError) {
-          logger.warn('execution-engine', 'Failed to acquire lock, another instance is syncing');
-        } else {
-          throw err;
-        }
-      });
-
-    await Promise.all([runPromise, listenPromise]);
+    await runPromise;
   }
 
   async processJob(job: Job<ExecutionEngineJob, unknown, string>): Promise<unknown> {
@@ -136,22 +130,69 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         this._rpcProvider,
         this._matchExecutor.nonceProvider,
         this._matchExecutor.address,
-        this._matchExecutor.owner,
+        this._matchExecutor.initiator,
         orderDurationSeconds
       );
-      const sortedMatches = this._sortMatches(nonPendingMatches).map((item) => {
-        if (item.isNative) {
-          return new NativeMatch(item, this._chainId, orderFactory);
+
+      const queue = new PQueue({ concurrency: 10 });
+      const initializedMatchResults = await Promise.all(
+        this._sortMatches(nonPendingMatches).map(async (item) => {
+          let match: NativeMatch | NonNativeMatch;
+          if (item.isNative) {
+            match = new NativeMatch(item, this._chainId, orderFactory);
+          } else {
+            match = new NonNativeMatch(
+              item,
+              this._chainId,
+              orderFactory,
+              this._rpcProvider,
+              this._matchExecutor.address
+            );
+          }
+          const matchValidity = await queue.add(async () => {
+            return await match.prepare({ taker: this._matchExecutor.address });
+          });
+          if (matchValidity.isValid) {
+            return {
+              isValid: true,
+              data: match
+            };
+          }
+          return {
+            isValid: false,
+            reason: matchValidity.reason,
+            isTransient: matchValidity.isTransient,
+            data: match
+          };
+        })
+      );
+
+      const { initializedMatches, failedMatches } = initializedMatchResults.reduce(
+        (acc, item) => {
+          if (item.isValid) {
+            acc.initializedMatches.push(item.data);
+          } else {
+            this.log(`Match ${item.data.id} is not valid - ${item.reason}`);
+            acc.failedMatches.push(item.data);
+          }
+          return acc;
+        },
+        {
+          initializedMatches: [] as (NativeMatch | NonNativeMatch)[],
+          failedMatches: [] as (NativeMatch | NonNativeMatch)[]
         }
-        return new NonNativeMatch(item, this._chainId, orderFactory, this._rpcProvider, this._matchExecutor.address);
-      });
+      );
 
       logger.log(
         'execution-engine',
-        `Block ${target.number}. Found ${sortedMatches.length} order matches before simulation.`
+        `Block ${target.number}. Found ${initializedMatches.length} order matches before simulation.`
       );
 
-      const { executable, inexecutable } = await this.simulate(sortedMatches, targetWithGas, current);
+      if (failedMatches.length > 0) {
+        logger.warn('execution-engine', `Block ${target.number}. Failed to prepare ${failedMatches.length} matches`);
+      }
+
+      const { executable, inexecutable } = await this.simulate(initializedMatches, targetWithGas, current);
 
       const txnMatches = executable.map((item) => item.match);
 
@@ -169,8 +210,12 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       logger.log('execution-engine', `Block ${target.number}. Simulating balance changes`);
       const balanceSimulationResult = await this.simulateBalanceChanges(txnData);
       if (!balanceSimulationResult.isValid) {
-        await this.saveSkippedBlock(targetWithGas, inexecutable, initiatedAt, balanceSimulationResult.reason);
-        throw new Error(balanceSimulationResult.reason);
+        await this.detectInvalidMatches(txnMatches, targetWithGas, current);
+        if (job.attemptsMade === this._maxAttempts) {
+          await this.saveSkippedBlock(targetWithGas, inexecutable, initiatedAt, balanceSimulationResult.reason);
+          throw new Error(balanceSimulationResult.reason);
+        }
+        throw new InvalidMatchError(`Received invalid match`);
       }
 
       this.savePendingBlock(targetWithGas, txnMatches, inexecutable, balanceSimulationResult, initiatedAt).catch(
@@ -184,7 +229,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       const { receipt } = await this._broadcaster.broadcast(txnData, {
         targetBlock: targetWithGas,
         currentBlock: current,
-        signer: this._matchExecutor.owner
+        signer: this._matchExecutor.initiator
       });
 
       if (receipt.status === 1) {
@@ -211,7 +256,63 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         receipt
       );
     } catch (err) {
+      console.error(err);
+      if (err instanceof InvalidMatchError) {
+        // throw the error to trigger a retry
+        throw err;
+      }
       logger.error('execution-engine', `failed to process job for block ${target.number} ${err}`);
+    }
+  }
+
+  async add(job: ExecutionEngineJob, id?: string): Promise<void>;
+  async add(jobs: ExecutionEngineJob[]): Promise<void>;
+  async add(job: ExecutionEngineJob | ExecutionEngineJob[], id?: string): Promise<void> {
+    const arr = Array.isArray(job) ? job : [job];
+    if (Array.isArray(job) && id) {
+      throw new Error(`Can only specify an id for a single job`);
+    }
+
+    const jobs: {
+      name: string;
+      data: JobDataType<ExecutionEngineJob>;
+      opts?: BulkJobOptions | undefined;
+    }[] = arr.map((item) => {
+      return {
+        name: `${item.id}`,
+        data: {
+          _processMetadata: {
+            type: 'default'
+          },
+          ...item
+        },
+        opts: {
+          attempts: this._maxAttempts,
+          backoff: 0
+        }
+      };
+    });
+    await this._queue.addBulk(jobs);
+  }
+
+  protected async detectInvalidMatches(
+    txnMatches: (NativeMatch | NonNativeMatch)[],
+    targetBlock: BlockWithGas,
+    currentBlock: Block
+  ) {
+    const matches = [];
+    for (const match of txnMatches) {
+      matches.push(match);
+      const { txn } = await this._generateTxn(matches, targetBlock, currentBlock);
+      if (txn) {
+        try {
+          await this._rpcProvider.estimateGas(txn);
+        } catch (err) {
+          this.error(`Match ${match.id} is invalid!`);
+          await this._savePendingMatches([match.match], 15);
+          return;
+        }
+      }
     }
   }
 
@@ -285,7 +386,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     initiatedAt: number,
     receipt: ethers.providers.TransactionReceipt
   ): Promise<void> {
-    // joe-todo: export executed order + block data to firestore
+    // TODO export block data to firestore
     const keyValuePairs: string[] = [];
 
     const receiptReceivedAt = Date.now();
@@ -299,6 +400,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     };
 
     const handledOrderIds = new Set<string>();
+    const executedOrders: string[] = [];
 
     if (receipt.status === 1) {
       /**
@@ -325,12 +427,15 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       const blockKey = this._storage.executionStorage.getBlockKey(block.number);
       keyValuePairs.push(blockKey, JSON.stringify(executedBlock));
 
+      const pipeline = this._db.pipeline();
+      let pipelineRequiresSave = false;
       for (const item of txnMatches) {
         const ids = [item.match.listing.id, item.match.offer.id];
         for (const id of ids) {
           if (!handledOrderIds.has(id)) {
             handledOrderIds.add(id);
             const matchedOrderId = ids.find((item) => item !== id);
+            const executionDuration = blockData.timestamp * 1000 - initiatedAt;
             const executedOrder: ExecutedExecutionOrder = {
               block,
               matchedOrderId: matchedOrderId ?? '',
@@ -348,8 +453,18 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
             };
             const orderKey = this._storage.executionStorage.getExecutedOrderExecutionKey(id);
             keyValuePairs.push(orderKey, JSON.stringify(executedOrder));
+            executedOrders.push(id);
+            const collection =
+              item.match.listing.order.nfts[0]?.collection ?? item.match.offer.order.nfts[0]?.collection;
+            if (collection) {
+              this._storage.executionStorage.saveExecutionDuration(pipeline, collection, executionDuration);
+              pipelineRequiresSave = true;
+            }
           }
         }
+      }
+      if (pipelineRequiresSave) {
+        await pipeline.exec();
       }
     } else {
       const executedBlock: NotIncludedBlock = {
@@ -395,6 +510,18 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       }
     }
     await this._db.mset(keyValuePairs);
+    if (executedOrders.length > 0 && !this._broadcaster.isForked) {
+      await this._storage.executionStorage.saveExecutedOrders(executedOrders);
+    }
+    await this._cleanup();
+  }
+
+  protected async _cleanup() {
+    try {
+      await this._db.zremrangebyscore(this._storage.executedOrdersOrderedSetKey, 0, Date.now());
+    } catch (err) {
+      this.warn(`Cleanup failed ${err}`);
+    }
   }
 
   protected async savePendingBlock(
@@ -509,15 +636,37 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
           gas: txData.gasLimit,
           gasPrice: txData.maxFeePerGas
         },
-        this._rpcProvider
+        this._rpcProvider,
+        {
+          skipReverts: true
+        }
       );
+
+      if ('error' in trace && trace.error) {
+        const error = trace.error;
+        console.log(`Error while simulating balance changes`);
+        console.log(error);
+
+        try {
+          await this._rpcProvider.estimateGas({
+            ...txData
+          });
+        } catch (err) {
+          this.warn(`Failed to simulate balance changes: ${(error as any).reason}`);
+        }
+        return {
+          isValid: false,
+          reason: 'transaction reverted',
+          isTransient: false
+        };
+      }
 
       const finalState = parseCallTrace(trace);
 
       const ethBalanceDiff = BigNumber.from(
-        finalState[matchExecutor].tokenBalanceState['native:0x0000000000000000000000000000000000000000'] ?? '0'
+        finalState[matchExecutor]?.tokenBalanceState?.['native:0x0000000000000000000000000000000000000000'] ?? '0'
       );
-      const wethBalanceDiff = BigNumber.from(finalState[matchExecutor].tokenBalanceState[`erc20:${weth}`] ?? '0');
+      const wethBalanceDiff = BigNumber.from(finalState[matchExecutor]?.tokenBalanceState?.[`erc20:${weth}`] ?? '0');
       const totalBalanceDiff = ethBalanceDiff.add(wethBalanceDiff);
 
       if (totalBalanceDiff.gte(0)) {
@@ -597,6 +746,10 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
 
     const initialState = await this._loadInitialState([...nonNativeTransfers, ...nativeTransfers], currentBlock.number);
 
+    console.log(`Initial state: ${JSON.stringify(initialState, null, 2)}`);
+
+    console.log(`Transfers`);
+    console.log(JSON.stringify([...nonNativeTransfers, ...nativeTransfers], null, 2));
     return this._simulate(initialState, results);
   }
 
@@ -794,22 +947,44 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     );
 
     if (nonNativeMatches.length > 0) {
-      const matchExternalFulfillments = await Promise.all(
+      const matchExternalFulfillmentResults = await Promise.all(
         nonNativeMatches.map((item) => item.getExternalFulfillment(this._matchExecutor.address))
       );
+
+      const { valid, numInvalid } = matchExternalFulfillmentResults.reduce(
+        (acc, item) => {
+          if (item.isValid) {
+            acc.valid.push(item.data);
+            return acc;
+          }
+          acc.numInvalid += 1;
+          this.warn(`Received invalid external fulfillment - ${item.reason}`);
+          return acc;
+        },
+        { valid: [] as { call: Call; nftsToTransfer: ChainNFTs[] }[], numInvalid: 0 }
+      );
+
+      if (numInvalid > 0) {
+        throw new Error(`Received ${numInvalid} invalid external fulfillment`);
+      }
+
+      // TODO generate fulfillments prior and filter out invalid items
       const externalFulfillments: ExternalFulfillments = {
-        calls: matchExternalFulfillments.map((item) => item.call),
-        nftsToTransfer: matchExternalFulfillments.flatMap((item) => item.nftsToTransfer)
+        calls: valid.map((item) => item.call),
+        nftsToTransfer: valid.flatMap((item) => item.nftsToTransfer)
       };
 
       const batch: Batch = {
         externalFulfillments,
         matches: matchOrders
       };
+
+      console.log('batch', JSON.stringify(batch, null, 2));
       const txn = this._matchExecutor.getBrokerTxn(batch, targetBlock, 30_000_000);
 
       return { txn, isNative: false };
     } else {
+      console.log('Native txn', JSON.stringify(matchOrders, null, 2));
       const txn = this._matchExecutor.getNativeTxn(matchOrders, targetBlock, 30_000_000);
 
       return { txn, isNative: true };
@@ -822,10 +997,10 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     });
   }
 
-  protected async _savePendingMatches(matches: Match[]) {
+  protected async _savePendingMatches(matches: Match[], ttlMinutes = 5) {
     const pipeline = this._db.pipeline();
     const now = Date.now();
-    const expiration = now + ONE_MIN * 5;
+    const expiration = now + ONE_MIN * ttlMinutes;
     for (const match of matches) {
       pipeline.zadd(this._storage.executedOrdersOrderedSetKey, expiration, match.listing.id);
       pipeline.zadd(this._storage.executedOrdersOrderedSetKey, expiration, match.offer.id);
@@ -855,7 +1030,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       'REV',
       'LIMIT',
       0,
-      1000
+      100
     );
 
     const fullMatchKeys = res.map(this._storage.getFullMatchKey.bind(this._storage));
@@ -891,69 +1066,6 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         return preferB;
       }
       return preferB;
-    });
-  }
-
-  protected async _listen(signal: RedlockAbortSignal) {
-    let cancel: (error: Error) => void = () => {
-      return;
-    };
-
-    const handler = async (blockNumber: number) => {
-      logger.log('block-listener', `Received block ${blockNumber} at ${new Date().toISOString()}`);
-
-      try {
-        this._checkSignal(signal);
-      } catch (err) {
-        if (err instanceof Error) {
-          cancel(err);
-        } else {
-          const errorMessage = `Block listener. Unexpected error: ${err}`;
-          cancel(new Error(errorMessage));
-        }
-        return;
-      }
-
-      try {
-        const block = await this._rpcProvider.getBlock(blockNumber);
-        const baseFeePerGas = block.baseFeePerGas;
-        if (baseFeePerGas == null) {
-          throw new Error(`Block ${blockNumber} does not have baseFeePerGas`);
-        }
-
-        const job: ExecutionEngineJob = {
-          id: `${config.env.chainId}:${blockNumber}`,
-          currentBlock: {
-            number: blockNumber,
-            timestamp: block.timestamp,
-            baseFeePerGas: baseFeePerGas.toString()
-          },
-          targetBlock: {
-            number: blockNumber + this._blockOffset,
-            timestamp: block.timestamp + this._blockOffset * 13, // joe-todo: this should be configured based on the chain
-            baseFeePerGas: FlashbotsBundleProvider.getMaxBaseFeeInFutureBlock(
-              baseFeePerGas,
-              this._blockOffset
-            ).toString()
-          }
-        };
-
-        await this.add(job);
-      } catch (err) {
-        if (err instanceof Error) {
-          logger.error('execution-engine', `Unexpected error while handling block: ${blockNumber} ${err.message}`);
-        } else {
-          logger.error('execution-engine', `Unexpected error while handling block: ${blockNumber} ${err}`);
-        }
-      }
-    };
-
-    return new Promise((reject) => {
-      cancel = (err: Error) => {
-        this._websocketProvider.off('block', handler);
-        reject(err);
-      };
-      this._websocketProvider.on('block', handler);
     });
   }
 

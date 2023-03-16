@@ -4,10 +4,11 @@ import { formatUnits } from 'ethers/lib/utils';
 import { ChainId, ChainNFTs } from '@infinityxyz/lib/types/core';
 
 import { Block, BlockWithMaxFeePerGas } from '@/common/block';
-import { ValidityResultWithData } from '@/lib/utils/validity-result';
+import { ValidityResult, ValidityResultWithData } from '@/lib/utils/validity-result';
 
-import { Seaport } from '../order';
+import { NonNativeOrderFactory } from '../order';
 import * as Flow from '../order/flow';
+import { NonNativeOrder } from '../order/non-native-order';
 import { Call, MatchOrders } from '../types';
 import { NativeMatch } from './native-match';
 import { OrderMatch } from './order-match.abstract';
@@ -16,7 +17,7 @@ import { Match, NativeMatchExecutionInfo, NonNativeMatchExecutionInfo } from './
 export class NonNativeMatch extends OrderMatch {
   protected _nativeMatch: NativeMatch;
 
-  protected _sourceOrder: Seaport.SingleTokenOrder;
+  protected _sourceOrder: NonNativeOrder<unknown>;
   constructor(
     match: Match,
     protected _chainId: ChainId,
@@ -49,8 +50,26 @@ export class NonNativeMatch extends OrderMatch {
         order: nativeListing
       }
     };
+
+    const nonNativeOrderFactory = new NonNativeOrderFactory(this._chainId, this.provider);
     this._nativeMatch = new NativeMatch(nativeMatch, _chainId, orderFactory);
-    this._sourceOrder = new Seaport.SingleTokenOrder(nonNativeOrder, _chainId, provider);
+    this._sourceOrder = nonNativeOrderFactory.create(nonNativeOrder);
+  }
+
+  async prepare(params: { taker: string }): Promise<ValidityResult> {
+    const [sourceOrderResult, nativeMatchResult] = await Promise.all([
+      this._sourceOrder.prepareOrder(params),
+      this._nativeMatch.prepare(params)
+    ]);
+
+    if (!sourceOrderResult.isValid) {
+      return sourceOrderResult;
+    } else if (!nativeMatchResult.isValid) {
+      return nativeMatchResult;
+    }
+    return {
+      isValid: true
+    };
   }
 
   async verifyMatchAtTarget(
@@ -77,7 +96,7 @@ export class NonNativeMatch extends OrderMatch {
     };
   }
 
-  getExternalFulfillment(taker: string): Promise<{ call: Call; nftsToTransfer: ChainNFTs[] }> {
+  getExternalFulfillment(taker: string): Promise<ValidityResultWithData<{ call: Call; nftsToTransfer: ChainNFTs[] }>> {
     return this._sourceOrder.getExternalFulfillment(taker);
   }
 
