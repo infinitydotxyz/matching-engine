@@ -620,7 +620,6 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     to: string;
     maxFeePerGas: string;
     maxPriorityFeePerGas: string;
-    gasLimit: string;
     data: string;
   }): Promise<ValidityResultWithData<{ totalBalanceDiff: string; ethBalanceDiff: string; wethBalanceDiff: string }>> {
     if (!config.env.isForkingEnabled) {
@@ -633,7 +632,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
           to: txData.to,
           data: txData.data,
           value: '0',
-          gas: txData.gasLimit,
+          gas: 30_000_000,
           gasPrice: txData.maxFeePerGas
         },
         this._rpcProvider,
@@ -980,12 +979,12 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       };
 
       console.log('batch', JSON.stringify(batch, null, 2));
-      const txn = this._matchExecutor.getBrokerTxn(batch, targetBlock, 30_000_000);
+      const txn = this._matchExecutor.getBrokerTxn(batch, targetBlock);
 
       return { txn, isNative: false };
     } else {
       console.log('Native txn', JSON.stringify(matchOrders, null, 2));
-      const txn = this._matchExecutor.getNativeTxn(matchOrders, targetBlock, 30_000_000);
+      const txn = this._matchExecutor.getNativeTxn(matchOrders, targetBlock);
 
       return { txn, isNative: true };
     }

@@ -38,7 +38,7 @@ export abstract class Broadcaster<T> {
   ) {}
 
   abstract broadcast(
-    txn: Omit<Eip1559Txn, 'type' | 'chainId' | 'nonce' | 'value'>,
+    txn: Omit<Eip1559Txn, 'type' | 'chainId' | 'nonce' | 'value' | 'gasLimit'>,
     options: BroadcastOptions
   ): Promise<{ receipt: ethers.providers.TransactionReceipt }>;
 

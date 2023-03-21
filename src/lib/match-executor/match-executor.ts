@@ -1,4 +1,4 @@
-import { BigNumberish, ethers } from 'ethers';
+import { ethers } from 'ethers';
 
 import { ChainId } from '@infinityxyz/lib/types/core';
 
@@ -24,28 +24,26 @@ export class MatchExecutor {
     this._contract = new ethers.Contract(this.address, MatchExecutorAbi, this.initiator);
   }
 
-  getNativeTxn(matches: MatchOrders[], targetBlock: BlockWithGas, gasLimit: BigNumberish) {
+  getNativeTxn(matches: MatchOrders[], targetBlock: BlockWithGas) {
     const encoded = this._contract.interface.encodeFunctionData('executeNativeMatches', [matches]);
     const txn = {
       from: this.initiator.address.toLowerCase(),
       to: this.address,
       maxFeePerGas: targetBlock.maxFeePerGas,
       maxPriorityFeePerGas: targetBlock.maxPriorityFeePerGas,
-      gasLimit: gasLimit.toString(),
       data: encoded
     };
 
     return txn;
   }
 
-  getBrokerTxn(batch: Batch, targetBlock: BlockWithGas, gasLimit: BigNumberish) {
+  getBrokerTxn(batch: Batch, targetBlock: BlockWithGas) {
     const encoded = this._contract.interface.encodeFunctionData('executeBrokerMatches', [[batch]]);
     const txn = {
       from: this.initiator.address.toLowerCase(),
       to: this.address,
       maxFeePerGas: targetBlock.maxFeePerGas,
       maxPriorityFeePerGas: targetBlock.maxPriorityFeePerGas,
-      gasLimit: gasLimit.toString(),
       data: encoded
     };
     return txn;
