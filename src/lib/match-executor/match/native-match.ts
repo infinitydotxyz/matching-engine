@@ -200,7 +200,7 @@ export class NativeMatch extends OrderMatch {
   }
 
   protected _getExecutionInfo(offer: ChainOBOrder, listing: ChainOBOrder): NativeMatchExecutionInfo {
-    const currency = listing.execParams[1];
+    const currency = offer.execParams[1];
     const wethAddress = Common.Addresses.Weth[parseInt(this._chainId, 10)];
     const isWeth = currency === wethAddress;
 
