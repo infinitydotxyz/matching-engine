@@ -342,7 +342,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     keyValuePairs.push(skippedBlockKey, JSON.stringify(skippedBlock));
 
     const handledOrderIds = new Set<string>();
-
+    const pipeline = this._db.pipeline();
     /**
      * process inexecutable order statuses
      */
@@ -363,12 +363,14 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
             }
           };
           const orderKey = this._storage.executionStorage.getInexecutableOrderExecutionKey(id);
-          keyValuePairs.push(orderKey, JSON.stringify(inexecutableOrder));
+          pipeline.set(orderKey, JSON.stringify(inexecutableOrder), 'PX', 15 * ONE_MIN);
         }
       }
     }
-
-    await this._db.mset(keyValuePairs);
+    if (keyValuePairs.length > 0) {
+      pipeline.mset(keyValuePairs);
+    }
+    await pipeline.exec();
   }
 
   protected async saveBlockResult(
@@ -540,6 +542,8 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
   ): Promise<void> {
     const keyValuePairs: string[] = [];
 
+    const pipeline = this._db.pipeline();
+
     /**
      * set the block status to pending
      */
@@ -608,11 +612,14 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
             }
           };
           const orderKey = this._storage.executionStorage.getInexecutableOrderExecutionKey(id);
-          keyValuePairs.push(orderKey, JSON.stringify(inexecutableOrder));
+          pipeline.set(orderKey, JSON.stringify(inexecutableOrder), 'PX', 15 * ONE_MIN);
         }
       }
     }
-    await this._db.mset(keyValuePairs);
+    if (keyValuePairs.length > 0) {
+      pipeline.mset(keyValuePairs);
+    }
+    await pipeline.exec();
   }
 
   protected async simulateBalanceChanges(txData: {
