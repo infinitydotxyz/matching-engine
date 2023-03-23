@@ -2,13 +2,15 @@ import { formatUnits } from 'ethers/lib/utils';
 import { Redis } from 'ioredis';
 
 import {
+  BaseExecutionStatusMatchedPendingExecution,
   ChainId,
   ExecutionStatus,
   ExecutionStatusMatchedExecuted,
   ExecutionStatusMatchedInexecutable,
   ExecutionStatusMatchedNoMatches,
   ExecutionStatusMatchedNotIncluded,
-  ExecutionStatusMatchedPendingExecution,
+  ExecutionStatusMatchedPendingExecutionGasTooLow,
+  ExecutionStatusMatchedPendingExecutionUnknown,
   ExecutionStatusNotFound
 } from '@infinityxyz/lib/types/core';
 import { ONE_HOUR } from '@infinityxyz/lib/utils';
@@ -392,17 +394,29 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
       const minimumMaxGasPriceGwei = await this.getOrderMatchMinMaxGasPrice(orderId);
       const mostRecentBlock = await this.executionStorage.getMostRecentBlock();
       const maxFeePerGasGwei = formatUnits(mostRecentBlock?.maxFeePerGas ?? '0', 'gwei').toString();
-
-      const pendingExecutionStatus: ExecutionStatusMatchedPendingExecution = {
+      const base: BaseExecutionStatusMatchedPendingExecution = {
         id: orderId,
         status: 'matched-pending-execution',
         matchInfo: {
           side: matchOperationMetadata.side,
           proposerInitiatedAt: matchOperationMetadata.timing.proposerInitiatedAt,
-          matchedAt: matchOperationMetadata.timing.matchedAt,
-          minimumMaxGasPriceGwei,
-          currentGasPriceGwei: maxFeePerGasGwei
-        } as any
+          matchedAt: matchOperationMetadata.timing.matchedAt
+        }
+      };
+
+      if (minimumMaxGasPriceGwei) {
+        const pendingExecutionStatus: ExecutionStatusMatchedPendingExecutionGasTooLow = {
+          ...base,
+          reason: 'gas-too-low',
+          bestMatchMaxFeePerGasGwei: minimumMaxGasPriceGwei.toString(),
+          currentMaxFeePerGasGwei: maxFeePerGasGwei
+        };
+        return pendingExecutionStatus;
+      }
+
+      const pendingExecutionStatus: ExecutionStatusMatchedPendingExecutionUnknown = {
+        ...base,
+        reason: 'unknown'
       };
       return pendingExecutionStatus;
     }
@@ -412,17 +426,29 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
         const minimumMaxGasPriceGwei = await this.getOrderMatchMinMaxGasPrice(orderId);
         const mostRecentBlock = await this.executionStorage.getMostRecentBlock();
         const maxFeePerGasGwei = formatUnits(mostRecentBlock?.maxFeePerGas ?? '0', 'gwei').toString();
-
-        const pendingExecutionStatus: ExecutionStatusMatchedPendingExecution = {
+        const base: BaseExecutionStatusMatchedPendingExecution = {
           id: orderId,
           status: 'matched-pending-execution',
           matchInfo: {
             side: matchOperationMetadata.side,
             proposerInitiatedAt: matchOperationMetadata.timing.proposerInitiatedAt,
-            matchedAt: matchOperationMetadata.timing.matchedAt,
-            minimumMaxGasPriceGwei,
-            currentGasPriceGwei: maxFeePerGasGwei
-          } as any
+            matchedAt: matchOperationMetadata.timing.matchedAt
+          }
+        };
+
+        if (minimumMaxGasPriceGwei) {
+          const pendingExecutionStatus: ExecutionStatusMatchedPendingExecutionGasTooLow = {
+            ...base,
+            reason: 'gas-too-low',
+            bestMatchMaxFeePerGasGwei: minimumMaxGasPriceGwei.toString(),
+            currentMaxFeePerGasGwei: maxFeePerGasGwei
+          };
+          return pendingExecutionStatus;
+        }
+
+        const pendingExecutionStatus: ExecutionStatusMatchedPendingExecutionUnknown = {
+          ...base,
+          reason: 'unknown'
         };
         return pendingExecutionStatus;
       }
@@ -523,19 +549,20 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
     }
 
     const minMaxGasPriceGwei = results.reduce((acc, [err, res]) => {
-      if (typeof res === 'string') {
-        res = parseFloat(res);
-      }
-
       if (err) {
         throw err;
-      } else if (typeof res !== 'number') {
+      }
+
+      if (typeof res === 'string') {
+        res = parseFloat(res);
+      } else if (!res) {
+        return acc;
+      }
+
+      if (typeof res !== 'number') {
         throw new Error(`Unexpected result type ${res}`);
       }
-      if (res < acc) {
-        return res;
-      }
-      return acc;
+      return res < acc ? res : acc;
     }, Infinity);
 
     if (minMaxGasPriceGwei === Infinity) {
