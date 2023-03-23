@@ -89,6 +89,17 @@ export class ExecutionStorage {
     return `block-storage:${this.version}:chain:${this._chainId}:blockNumber:${blockNumber}`;
   }
 
+  /**
+   * A fixed-size list of the most recent block numbers
+   */
+  get mostRecentBlocksKey() {
+    return `block-storage:${this.version}:chain:${this._chainId}:blocks:most-recent`;
+  }
+
+  get mostRecentBlocksSize() {
+    return 16;
+  }
+
   constructor(
     protected _db: Redis,
     protected _firestore: FirebaseFirestore.Firestore,
@@ -266,5 +277,25 @@ export class ExecutionStorage {
     pipeline.ltrim(collectionMatchExecutionKey, 0, 999);
     pipeline.lpush(globalMatchExecutionKey, duration);
     pipeline.ltrim(globalMatchExecutionKey, 0, 999);
+  }
+
+  async getMostRecentBlock() {
+    const result = await this._db.lrange(this.mostRecentBlocksKey, 0, -1);
+    return result.reduce((acc: ExecutionBlock | null, item) => {
+      try {
+        const block = JSON.parse(item) as ExecutionBlock;
+
+        if (!acc) {
+          return block;
+        }
+
+        if (block.number > acc.number) {
+          return block;
+        }
+        return acc;
+      } catch (err) {
+        return acc;
+      }
+    }, null);
   }
 }

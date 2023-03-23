@@ -1,3 +1,4 @@
+import { formatUnits } from 'ethers/lib/utils';
 import { Redis } from 'ioredis';
 
 import {
@@ -388,28 +389,40 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
 
     const executionStatus = await this.executionStorage.getOrderExecutionStatus(orderId);
     if (!executionStatus) {
+      const minimumMaxGasPriceGwei = await this.getOrderMatchMinMaxGasPrice(orderId);
+      const mostRecentBlock = await this.executionStorage.getMostRecentBlock();
+      const maxFeePerGasGwei = formatUnits(mostRecentBlock?.maxFeePerGas ?? '0', 'gwei').toString();
+
       const pendingExecutionStatus: ExecutionStatusMatchedPendingExecution = {
         id: orderId,
         status: 'matched-pending-execution',
         matchInfo: {
           side: matchOperationMetadata.side,
           proposerInitiatedAt: matchOperationMetadata.timing.proposerInitiatedAt,
-          matchedAt: matchOperationMetadata.timing.matchedAt
-        }
+          matchedAt: matchOperationMetadata.timing.matchedAt,
+          minimumMaxGasPriceGwei,
+          currentGasPriceGwei: maxFeePerGasGwei
+        } as any
       };
       return pendingExecutionStatus;
     }
 
     switch (executionStatus.status) {
       case 'pending': {
+        const minimumMaxGasPriceGwei = await this.getOrderMatchMinMaxGasPrice(orderId);
+        const mostRecentBlock = await this.executionStorage.getMostRecentBlock();
+        const maxFeePerGasGwei = formatUnits(mostRecentBlock?.maxFeePerGas ?? '0', 'gwei').toString();
+
         const pendingExecutionStatus: ExecutionStatusMatchedPendingExecution = {
           id: orderId,
           status: 'matched-pending-execution',
           matchInfo: {
             side: matchOperationMetadata.side,
             proposerInitiatedAt: matchOperationMetadata.timing.proposerInitiatedAt,
-            matchedAt: matchOperationMetadata.timing.matchedAt
-          }
+            matchedAt: matchOperationMetadata.timing.matchedAt,
+            minimumMaxGasPriceGwei,
+            currentGasPriceGwei: maxFeePerGasGwei
+          } as any
         };
         return pendingExecutionStatus;
       }
@@ -488,6 +501,48 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
         return executedStatus;
       }
     }
+  }
+
+  async getOrderMatchMinMaxGasPrice(orderId: string) {
+    const orderMatchesKey = this.getOrderMatchesSet(orderId);
+    const orderMatches = await this._db.smembers(orderMatchesKey);
+
+    if (orderMatches.length === 0) {
+      return null;
+    }
+    const pipeline = this._db.pipeline();
+    for (const orderMatchId of orderMatches) {
+      const matchMaxGasPriceKey = this.matchesByGasPriceOrderedSetKey;
+      pipeline.zscore(matchMaxGasPriceKey, orderMatchId);
+    }
+
+    const results = await pipeline.exec();
+
+    if (!results) {
+      throw new Error(`Failed to get max gas price for order ${orderId}`);
+    }
+
+    const minMaxGasPriceGwei = results.reduce((acc, [err, res]) => {
+      if (typeof res === 'string') {
+        res = parseFloat(res);
+      }
+
+      if (err) {
+        throw err;
+      } else if (typeof res !== 'number') {
+        throw new Error(`Unexpected result type ${res}`);
+      }
+      if (res < acc) {
+        return res;
+      }
+      return acc;
+    }, Infinity);
+
+    if (minMaxGasPriceGwei === Infinity) {
+      return null;
+    }
+
+    return minMaxGasPriceGwei;
   }
 
   async getPersistentExecutionStatus(orderIds: string[]) {

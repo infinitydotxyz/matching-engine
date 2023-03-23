@@ -308,7 +308,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         try {
           await this._rpcProvider.estimateGas(txn);
         } catch (err) {
-          this.error(`Match ${match.id} is invalid!`);
+          this.error(`Match ${match.id} is invalid! ${err}`);
           await this._savePendingMatches([match.match], 15);
           return;
         }
@@ -343,6 +343,13 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
 
     const handledOrderIds = new Set<string>();
     const pipeline = this._db.pipeline();
+    pipeline.lpush(this._storage.executionStorage.mostRecentBlocksKey, JSON.stringify(skippedBlock));
+    pipeline.ltrim(
+      this._storage.executionStorage.mostRecentBlocksKey,
+      0,
+      this._storage.executionStorage.mostRecentBlocksSize
+    );
+
     /**
      * process inexecutable order statuses
      */
@@ -430,6 +437,13 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       keyValuePairs.push(blockKey, JSON.stringify(executedBlock));
 
       const pipeline = this._db.pipeline();
+      pipeline.lpush(this._storage.executionStorage.mostRecentBlocksKey, JSON.stringify(executedBlock));
+      pipeline.ltrim(
+        this._storage.executionStorage.mostRecentBlocksKey,
+        0,
+        this._storage.executionStorage.mostRecentBlocksSize
+      );
+
       let pipelineRequiresSave = false;
       for (const item of txnMatches) {
         const ids = [item.match.listing.id, item.match.offer.id];
@@ -485,6 +499,15 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       };
       const blockKey = this._storage.executionStorage.getBlockKey(block.number);
       keyValuePairs.push(blockKey, JSON.stringify(executedBlock));
+
+      const pipeline = this._db.pipeline();
+      pipeline.lpush(this._storage.executionStorage.mostRecentBlocksKey, JSON.stringify(executedBlock));
+      pipeline.ltrim(
+        this._storage.executionStorage.mostRecentBlocksKey,
+        0,
+        this._storage.executionStorage.mostRecentBlocksSize
+      );
+      await pipeline.exec();
 
       for (const item of txnMatches) {
         const ids = [item.match.listing.id, item.match.offer.id];
@@ -561,6 +584,13 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     };
     const blockKey = this._storage.executionStorage.getBlockKey(block.number);
     keyValuePairs.push(blockKey, JSON.stringify(pendingBlock));
+
+    pipeline.lpush(this._storage.executionStorage.mostRecentBlocksKey, JSON.stringify(pendingBlock));
+    pipeline.ltrim(
+      this._storage.executionStorage.mostRecentBlocksKey,
+      0,
+      this._storage.executionStorage.mostRecentBlocksSize
+    );
 
     /**
      * only save a status event for each order once
@@ -1036,7 +1066,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       'REV',
       'LIMIT',
       0,
-      100
+      500
     );
 
     const fullMatchKeys = res.map(this._storage.getFullMatchKey.bind(this._storage));
