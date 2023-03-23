@@ -17,7 +17,6 @@ export const getExecutionEngine = async () => {
     config.env.chainId,
     network.initiator.address,
     network.exchangeAddress,
-    redlock,
     network.httpProvider,
     firestore
   );
@@ -57,7 +56,7 @@ export const getExecutionEngine = async () => {
 };
 
 export const startExecutionEngine = async () => {
-  const { executionEngine, nonceProvider, network } = await getExecutionEngine();
+  const { executionEngine, network } = await getExecutionEngine();
   const blockScheduler = new BlockScheduler(
     redis,
     config.env.chainId,
@@ -71,11 +70,10 @@ export const startExecutionEngine = async () => {
     }
   );
   try {
-    const nonceProviderPromise = nonceProvider.run();
     const executionEnginePromise = executionEngine.run();
     const blockSchedulerPromise = blockScheduler.run();
 
-    await Promise.all([nonceProviderPromise, executionEnginePromise, blockSchedulerPromise]);
+    await Promise.all([executionEnginePromise, blockSchedulerPromise]);
   } catch (err) {
     logger.error(`start-execution-engine`, `Failed to start execution engine ${JSON.stringify(err)}`);
 
@@ -83,6 +81,5 @@ export const startExecutionEngine = async () => {
       logger.error(`start-execution-engine`, `Failed to close execution engine ${JSON.stringify(err)}`);
     });
     await blockScheduler.close();
-    nonceProvider.close();
   }
 };

@@ -31,7 +31,7 @@ export default async function register(fastify: FastifyInstance) {
     const collection = _collection.toLowerCase();
 
     const processes = getProcesses(collection);
-    const { executionEngine, nonceProvider } = await getExecutionEngine();
+    const { executionEngine } = await getExecutionEngine();
     const { orderbookStorage } = getOrderbook();
 
     const matchingEngineHealthPromise = processes.matchingEngine.getHealthInfo();
@@ -48,7 +48,6 @@ export default async function register(fastify: FastifyInstance) {
 
     await processes.matchingEngine.close();
     await processes.orderRelay.close();
-    nonceProvider.close();
     await executionEngine.close();
 
     return {
