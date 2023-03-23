@@ -1,8 +1,10 @@
+/* eslint-disable no-constant-condition */
 import { BigNumber, BigNumberish, ethers } from 'ethers';
 import Redlock, { ExecutionError, RedlockAbortSignal } from 'redlock';
 
 import { FlowExchangeABI } from '@infinityxyz/lib/abi';
 import { ChainId } from '@infinityxyz/lib/types/core';
+import { sleep } from '@infinityxyz/lib/utils';
 
 import { logger } from '@/common/logger';
 
@@ -63,30 +65,48 @@ export class NonceProvider {
 
     const lockDuration = 15_000;
 
-    await this._redlock
-      .using([nonceProviderLockKey], lockDuration, async (signal) => {
-        this.log(`Acquired nonce lock for account: ${this._accountAddress} exchange: ${this._exchangeAddress}`);
-        this._nonceLoaded = this._loadNonce();
-        this._signal = signal;
-        await this._nonceLoaded;
+    let attempt = 0;
 
-        await new Promise<void>((resolve) => {
-          this._close = () => {
-            this.log(`Closing nonce provider for account: ${this._accountAddress}`);
-            this._closed = true;
-            resolve();
-          };
+    while (true) {
+      try {
+        await this._redlock.using([nonceProviderLockKey], lockDuration, async (signal) => {
+          attempt = 0;
+          this.log(`Acquired nonce lock for account: ${this._accountAddress} exchange: ${this._exchangeAddress}`);
+          this._nonceLoaded = this._loadNonce();
+          this._signal = signal;
+          await this._nonceLoaded;
+
+          await new Promise<void>((resolve) => {
+            this._close = () => {
+              this.log(`Closing nonce provider for account: ${this._accountAddress}`);
+              this._closed = true;
+              resolve();
+            };
+          });
         });
-      })
-      .catch((err) => {
+      } catch (err) {
+        attempt += 1;
         if (err instanceof ExecutionError) {
-          this.warn(
-            `Failed to acquire lock, another instance is running for account: ${this._accountAddress} exchange: ${this._exchangeAddress}`
+          this.error(
+            `Failed to acquire nonce lock for account: ${this._accountAddress} exchange: ${this._exchangeAddress}. Attempt ${attempt} Retrying...`
           );
+          if (attempt > 10) {
+            throw err;
+          }
+          await sleep(3000);
+          continue;
         } else {
-          throw err;
+          this.error(
+            `Nonce provider error for account: ${this._accountAddress} exchange: ${this._exchangeAddress} ${err}`
+          );
+          if (attempt > 10) {
+            throw err;
+          }
+          await sleep(3000);
+          continue;
         }
-      });
+      }
+    }
   }
 
   public async getNonce() {
