@@ -393,7 +393,7 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
     if (!executionStatus) {
       const minimumMaxGasPriceGwei = await this.getOrderMatchMinMaxGasPrice(orderId);
       const mostRecentBlock = await this.executionStorage.getMostRecentBlock();
-      const maxFeePerGasGwei = formatUnits(mostRecentBlock?.maxFeePerGas ?? '0', 'gwei').toString();
+      const maxFeePerGasGwei = parseFloat(formatUnits(mostRecentBlock?.maxFeePerGas ?? '0', 'gwei').toString());
       const base: BaseExecutionStatusMatchedPendingExecution = {
         id: orderId,
         status: 'matched-pending-execution',
@@ -404,12 +404,12 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
         }
       };
 
-      if (minimumMaxGasPriceGwei) {
+      if (minimumMaxGasPriceGwei != null && minimumMaxGasPriceGwei < maxFeePerGasGwei) {
         const pendingExecutionStatus: ExecutionStatusMatchedPendingExecutionGasTooLow = {
           ...base,
           reason: 'gas-too-low',
           bestMatchMaxFeePerGasGwei: minimumMaxGasPriceGwei.toString(),
-          currentMaxFeePerGasGwei: maxFeePerGasGwei
+          currentMaxFeePerGasGwei: maxFeePerGasGwei.toString()
         };
         return pendingExecutionStatus;
       }
@@ -425,7 +425,7 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
       case 'pending': {
         const minimumMaxGasPriceGwei = await this.getOrderMatchMinMaxGasPrice(orderId);
         const mostRecentBlock = await this.executionStorage.getMostRecentBlock();
-        const maxFeePerGasGwei = formatUnits(mostRecentBlock?.maxFeePerGas ?? '0', 'gwei').toString();
+        const maxFeePerGasGwei = parseFloat(formatUnits(mostRecentBlock?.maxFeePerGas ?? '0', 'gwei').toString());
         const base: BaseExecutionStatusMatchedPendingExecution = {
           id: orderId,
           status: 'matched-pending-execution',
@@ -436,12 +436,12 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
           }
         };
 
-        if (minimumMaxGasPriceGwei) {
+        if (minimumMaxGasPriceGwei != null && minimumMaxGasPriceGwei < maxFeePerGasGwei) {
           const pendingExecutionStatus: ExecutionStatusMatchedPendingExecutionGasTooLow = {
             ...base,
             reason: 'gas-too-low',
             bestMatchMaxFeePerGasGwei: minimumMaxGasPriceGwei.toString(),
-            currentMaxFeePerGasGwei: maxFeePerGasGwei
+            currentMaxFeePerGasGwei: maxFeePerGasGwei.toString()
           };
           return pendingExecutionStatus;
         }
