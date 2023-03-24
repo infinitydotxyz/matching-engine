@@ -29,7 +29,10 @@ export type MatchingEngineJob = { id: string; order: OB.Types.OrderParams; propo
 export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, MatchingEngineResult> {
   public readonly version: string;
 
-  protected _MATCH_LIMIT = 10;
+  /**
+   * Specifies the max number of orders a proposer will be matched with
+   */
+  protected _MATCH_LIMIT = 3;
 
   /**
    * temporary storage for order matches
