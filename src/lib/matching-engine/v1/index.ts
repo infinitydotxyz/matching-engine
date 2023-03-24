@@ -559,7 +559,10 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
         isNative: true
       };
     } else if (offer.isNative) {
-      const arbitrageWei = offerPrice.sub(listingPrice);
+      const fees = offerPrice.mul(50).div(10000);
+      const netOfferAmount = offerPrice.sub(fees);
+
+      const arbitrageWei = netOfferAmount.sub(listingPrice);
       return {
         maxGasPriceGwei: offer.maxTxGasPriceGwei,
         executionPriceWei: offerPrice.toString(),

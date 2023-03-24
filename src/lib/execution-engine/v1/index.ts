@@ -309,7 +309,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
           await this._rpcProvider.estimateGas(txn);
         } catch (err) {
           this.error(`Match ${match.id} is invalid! ${err}`);
-          await this._savePendingMatches([match.match], 15);
+          await this._savePendingMatches([match.match]);
           return;
         }
       }
@@ -679,10 +679,16 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       );
 
       if ('error' in trace && trace.error) {
+        if ('revertReason' in trace && trace.revertReason === 'Transaction not non-negative') {
+          logger.error('balance-simulation', `Transaction not non-negative ${JSON.stringify(trace, null, 2)}`);
+          return {
+            isValid: false,
+            reason: 'transaction reverted',
+            isTransient: false
+          };
+        }
         const error = trace.error;
-        console.log(`Error while simulating balance changes`);
-        console.log(error);
-
+        logger.error('balance-simulation', `Error while simulating balance changes ${error}`);
         try {
           await this._rpcProvider.estimateGas({
             ...txData

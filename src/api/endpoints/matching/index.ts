@@ -229,15 +229,6 @@ export default async function register(fastify: FastifyInstance) {
 
       const { orderbookStorage } = getOrderbook();
 
-      const status = await orderbookStorage.getStatus(orderId);
-
-      if (status !== 'active') {
-        return {
-          success: false,
-          reason: `order is not active - status ${status}`
-        };
-      }
-
       const order = await orderbookStorage.getOrder(orderId);
       if (!order) {
         return {
