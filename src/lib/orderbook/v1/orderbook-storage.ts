@@ -1,4 +1,5 @@
 import { formatUnits } from 'ethers/lib/utils';
+import EventEmitter from 'events';
 import { Redis } from 'ioredis';
 
 import {
@@ -24,8 +25,14 @@ import { ExecutionStorage } from './execution-storage';
 import { Order } from './order';
 import { OrderData } from './types';
 
+interface OrderbookEvents {
+  orderMatchRemoved: { orderId: string };
+}
+
 export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData> {
   public readonly version = 'v1';
+
+  protected _eventEmitter: EventEmitter;
 
   /**
    * ------ MATCHES ------
@@ -132,6 +139,7 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
   constructor(protected _db: Redis, protected _firestore: FirebaseFirestore.Firestore, protected _chainId: ChainId) {
     super();
     this.executionStorage = new ExecutionStorage(_db, this._firestore, this, _chainId);
+    this._eventEmitter = new EventEmitter();
   }
 
   async has(orderId: string): Promise<boolean> {
@@ -190,6 +198,7 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
             for (const match of matches) {
               const matchOrderMatchesSet = this.getOrderMatchesSet(match);
               txn.srem(matchOrderMatchesSet, item.id);
+              this.emit('orderMatchRemoved', { orderId: match });
             }
           }
           txn.del(orderMatchesSet);
@@ -588,5 +597,17 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
     });
 
     return orderStatuses;
+  }
+
+  protected emit<K extends keyof OrderbookEvents>(event: K, data: OrderbookEvents[K]) {
+    this._eventEmitter.emit(event, data);
+  }
+
+  public on<K extends keyof OrderbookEvents>(event: K, handler: (data: OrderbookEvents[K]) => void) {
+    this._eventEmitter.on(event, handler);
+  }
+
+  public off<K extends keyof OrderbookEvents>(event: K, handler: (data: OrderbookEvents[K]) => void) {
+    this._eventEmitter.off(event, handler);
   }
 }

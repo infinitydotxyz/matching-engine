@@ -3,6 +3,7 @@ import { Job } from 'bullmq';
 import { BigNumber } from 'ethers/lib/ethers';
 import { formatEther, formatUnits } from 'ethers/lib/utils';
 import { Redis } from 'ioredis';
+import PQueue from 'p-queue';
 import Redlock, { ExecutionError } from 'redlock';
 
 import { ChainId } from '@infinityxyz/lib/types/core';
@@ -175,12 +176,33 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
     const matchingEngineLock = `matching-engine:chain:${config.env.chainId}:collection:${this.collectionAddress}:lock`;
     const lockDuration = 15_000;
     let failedAttempts = 0;
+    const queue = new PQueue({ concurrency: 5 });
+    const triggerMatchingForOrderId = ({ orderId }: { orderId: string }) => {
+      queue
+        .add(async () => {
+          const orderData = await this._storage.getOrder(orderId);
+          if (orderData) {
+            const order = OB.Order.getOrderParams(orderId, this._chainId, orderData.order);
+            this.log(`Triggering matching for order ${orderId} after match was removed`);
+            await this.add({
+              id: orderId,
+              order: order,
+              proposerInitiatedAt: Date.now()
+            });
+          }
+        })
+        .catch((err) => {
+          this.error(`failed to trigger matching for order ${orderId} ${err}`);
+        });
+    };
 
     while (failedAttempts < 5) {
       try {
         const lockPromise = this._redlock.using([matchingEngineLock], lockDuration, async (signal) => {
           this.log(`Acquired lock`);
           failedAttempts = 0;
+
+          this._storage.on('orderMatchRemoved', triggerMatchingForOrderId);
 
           const abortPromise = new Promise((resolve, reject) => {
             signal.onabort = () => {
@@ -193,6 +215,7 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
         });
         await lockPromise;
       } catch (err) {
+        this._storage.off('orderMatchRemoved', triggerMatchingForOrderId);
         failedAttempts += 1;
         if (err instanceof ExecutionError) {
           this.warn(`Failed to acquire lock, another instance is syncing. Attempt: ${failedAttempts}`);
@@ -202,7 +225,7 @@ export class MatchingEngine extends AbstractMatchingEngine<MatchingEngineJob, Ma
         await sleep(lockDuration / 3);
       }
     }
-
+    this._storage.off('orderMatchRemoved', triggerMatchingForOrderId);
     throw new Error('Failed to acquire lock after 5 attempts');
   }
 
