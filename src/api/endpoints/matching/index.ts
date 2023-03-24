@@ -174,7 +174,7 @@ export default async function register(fastify: FastifyInstance) {
       if (status !== 'active') {
         return {
           success: false,
-          reason: 'order is not active'
+          reason: `order is not active - status ${status}`
         };
       }
 

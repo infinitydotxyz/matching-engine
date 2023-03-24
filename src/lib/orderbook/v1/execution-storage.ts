@@ -141,11 +141,28 @@ export class ExecutionStorage {
     if (executedStatus) {
       return executedStatus;
     } else {
+      const mostRecentBlocksEncoded = await this._db.lrange(this.mostRecentBlocksKey, 0, 4);
+      let mostRecentBlocks: ExecutionBlock[];
+      try {
+        mostRecentBlocks = mostRecentBlocksEncoded.map((item) => JSON.parse(item ?? '')) as ExecutionBlock[];
+      } catch (err) {
+        mostRecentBlocks = [];
+      }
+      /**
+       * Find the most recent status
+       */
       const mostRecent = [pendingStatus, notIncludedStatus, inexecutableStatus]
         .sort((a, b) => (a?.block?.number ?? 0) - (b?.block?.number ?? 0))
         .pop();
 
-      return mostRecent ?? null;
+      /**
+       * Check if the most recent status is recent enough
+       */
+      if (mostRecent?.block.number && mostRecentBlocks.find((block) => block.number < mostRecent.block.number)) {
+        return mostRecent;
+      }
+
+      return null;
     }
   }
 
