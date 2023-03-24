@@ -4,9 +4,13 @@ import PQueue from 'p-queue';
 
 import { ExecutionStatusMatchedExecuted } from '@infinityxyz/lib/types/core';
 
+import { redis } from '@/common/db';
 import { logger } from '@/common/logger';
 import { config } from '@/config';
 import { getOrderbook, getProcesses, startCollection } from '@/lib/collections-queue/start-collection';
+import { MatchingEngine } from '@/lib/matching-engine/v1';
+import { OrderRelay } from '@/lib/order-relay/v1/order-relay';
+import { Order } from '@/lib/orderbook/v1';
 
 import { getExecutionEngine } from '../../../start-execution-engine';
 
@@ -83,6 +87,60 @@ export default async function register(fastify: FastifyInstance) {
       startCollection(collection).catch((err) => {
         logger.error(`PUT ${base}/:collection`, `Failed to start collection ${collection} ${JSON.stringify(err)}`);
       });
+
+      return { status: 'ok' };
+    });
+
+    fastify.put(`${base}/refresh`, async () => {
+      const { orderbookStorage } = getOrderbook();
+
+      const activeOrdersKey = orderbookStorage.activeOrdersOrderedSetKey;
+      const activeOrders = await redis.zrange(activeOrdersKey, 0, -1);
+
+      const processes = new Map<string, { matchingEngine: MatchingEngine; orderRelay: OrderRelay }>();
+      const getMatchingEngine = (collection: string) => {
+        const collectionProcesses = processes.get(collection);
+        if (collectionProcesses) {
+          return collectionProcesses.matchingEngine;
+        } else {
+          const collectionProcesses = getProcesses(collection);
+          processes.set(collection, collectionProcesses);
+          return collectionProcesses.matchingEngine;
+        }
+      };
+
+      const queue = new PQueue({ concurrency: 5 });
+      const chainId = config.env.chainId;
+      const triggerMatchingForOrderId = ({ orderId }: { orderId: string }) => {
+        queue
+          .add(async () => {
+            const orderData = await orderbookStorage.getOrder(orderId);
+            const collection = orderData?.order?.nfts?.[0]?.collection;
+            if (orderData && collection) {
+              const matchingEngine = getMatchingEngine(collection);
+              const order = Order.getOrderParams(orderId, chainId, orderData.order);
+              logger.log('refresh', `Triggering matching for order ${orderId}`);
+              await matchingEngine.add({
+                id: orderId,
+                order: order,
+                proposerInitiatedAt: Date.now()
+              });
+            }
+          })
+          .catch((err) => {
+            logger.error('refresh', `failed to trigger matching for order ${orderId} ${err}`);
+          });
+      };
+
+      for (const orderId of activeOrders) {
+        triggerMatchingForOrderId({ orderId });
+      }
+
+      await queue.onIdle();
+      for (const item of processes.values()) {
+        await item.matchingEngine.close();
+        await item.orderRelay.close();
+      }
 
       return { status: 'ok' };
     });

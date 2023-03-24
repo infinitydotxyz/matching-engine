@@ -197,8 +197,11 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
             txn.zrem(this.matchesByGasPriceOrderedSetKey, ...matches);
             for (const match of matches) {
               const matchOrderMatchesSet = this.getOrderMatchesSet(match);
+              const ids = match.split(':').filter((id) => id !== item.id);
               txn.srem(matchOrderMatchesSet, item.id);
-              this.emit('orderMatchRemoved', { orderId: match });
+              for (const id of ids) {
+                this.emit('orderMatchRemoved', { orderId: id });
+              }
             }
           }
           txn.del(orderMatchesSet);
