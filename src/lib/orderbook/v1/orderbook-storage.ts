@@ -7,6 +7,7 @@ import {
   ChainId,
   ExecutionStatus,
   ExecutionStatusMatchedExecuted,
+  ExecutionStatusMatchedExecuting,
   ExecutionStatusMatchedInexecutable,
   ExecutionStatusMatchedNoMatches,
   ExecutionStatusMatchedNotIncluded,
@@ -435,34 +436,26 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
 
     switch (executionStatus.status) {
       case 'pending': {
-        const minimumMaxGasPriceGwei = await this.getOrderMatchMinMaxGasPrice(orderId);
-        const mostRecentBlock = await this.executionStorage.getMostRecentBlock();
-        const maxFeePerGasGwei = parseFloat(formatUnits(mostRecentBlock?.maxFeePerGas ?? '0', 'gwei').toString());
-        const base: BaseExecutionStatusMatchedPendingExecution = {
+        const executing: ExecutionStatusMatchedExecuting = {
           id: orderId,
-          status: 'matched-pending-execution',
+          status: 'matched-executing',
           matchInfo: {
             side: matchOperationMetadata.side,
             proposerInitiatedAt: matchOperationMetadata.timing.proposerInitiatedAt,
             matchedAt: matchOperationMetadata.timing.matchedAt
+          },
+          executionInfo: {
+            initiatedAt: executionStatus.timing.initiatedAt,
+            matchId: executionStatus.matchId,
+            matchedOrderId: executionStatus.matchedOrderId,
+            blockNumber: executionStatus.block.number,
+            baseFeePerGas: executionStatus.block.baseFeePerGas,
+            maxFeePerGas: executionStatus.block.maxFeePerGas,
+            maxPriorityFeePerGas: executionStatus.block.maxPriorityFeePerGas
           }
         };
 
-        if (minimumMaxGasPriceGwei != null && minimumMaxGasPriceGwei < maxFeePerGasGwei) {
-          const pendingExecutionStatus: ExecutionStatusMatchedPendingExecutionGasTooLow = {
-            ...base,
-            reason: 'gas-too-low',
-            bestMatchMaxFeePerGasGwei: minimumMaxGasPriceGwei.toString(),
-            currentMaxFeePerGasGwei: maxFeePerGasGwei.toString()
-          };
-          return pendingExecutionStatus;
-        }
-
-        const pendingExecutionStatus: ExecutionStatusMatchedPendingExecutionUnknown = {
-          ...base,
-          reason: 'unknown'
-        };
-        return pendingExecutionStatus;
+        return executing;
       }
       case 'inexecutable': {
         const inexecutableStatus: ExecutionStatusMatchedInexecutable = {
