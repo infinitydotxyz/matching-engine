@@ -356,7 +356,7 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
     }
   }
 
-  async getExecutionStatus(orderId: string): Promise<ExecutionStatus> {
+  async getExecutionStatus(orderId: string, ttsBlockNumber: number): Promise<ExecutionStatus> {
     const matchOperationMetadata = await this.getOrderMatchOperationMetadata(orderId);
     if (!matchOperationMetadata) {
       const status = await this.getStatus(orderId);
@@ -401,7 +401,7 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
       return noMatchesStatus;
     }
 
-    const executionStatus = await this.executionStorage.getOrderExecutionStatus(orderId);
+    const executionStatus = await this.executionStorage.getOrderExecutionStatus(orderId, ttsBlockNumber);
     if (!executionStatus) {
       const minimumMaxGasPriceGwei = await this.getOrderMatchMinMaxGasPrice(orderId);
       const mostRecentBlock = await this.executionStorage.getMostRecentBlock();

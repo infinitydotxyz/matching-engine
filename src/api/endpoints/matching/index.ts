@@ -167,7 +167,8 @@ export default async function register(fastify: FastifyInstance) {
       };
     }
 
-    const status = await orderbookStorage.getExecutionStatus(orderId);
+    const ttsBlockNumber = await orderbookStorage.executionStorage.getTTSBlockNumber();
+    const status = await orderbookStorage.getExecutionStatus(orderId, ttsBlockNumber);
 
     return {
       status
@@ -190,6 +191,7 @@ export default async function register(fastify: FastifyInstance) {
     const queue = new PQueue({ concurrency: 20 });
 
     const partialOrderStatuses = await orderbookStorage.getPersistentExecutionStatus(orderIds);
+    const ttsBlockNumber = await orderbookStorage.executionStorage.getTTSBlockNumber();
 
     const statuses = partialOrderStatuses.map(
       async (item: { orderId: string; status: ExecutionStatusMatchedExecuted | null }) => {
@@ -197,7 +199,7 @@ export default async function register(fastify: FastifyInstance) {
           if (item.status) {
             return item.status;
           }
-          return await orderbookStorage.getExecutionStatus(item.orderId);
+          return await orderbookStorage.getExecutionStatus(item.orderId, ttsBlockNumber);
         });
       }
     );

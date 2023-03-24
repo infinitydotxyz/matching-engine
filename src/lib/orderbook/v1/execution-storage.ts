@@ -90,7 +90,7 @@ export class ExecutionStorage {
   }
 
   /**
-   * A fixed-size list of the most recent block numbers
+   * A fixed-size list of the most recent blocks
    */
   get mostRecentBlocksKey() {
     return `block-storage:${this.version}:chain:${this._chainId}:blocks:most-recent`;
@@ -117,7 +117,7 @@ export class ExecutionStorage {
     }
   }
 
-  async getOrderExecutionStatus(orderId: string): Promise<ExecutionOrder | null> {
+  async getOrderExecutionStatus(orderId: string, ttsBlockNumber: number): Promise<ExecutionOrder | null> {
     const pending = this.getPendingOrderExecutionKey(orderId);
     const notIncluded = this.getNotIncludedOrderExecutionKey(orderId);
     const executed = this.getExecutedOrderExecutionKey(orderId);
@@ -141,13 +141,6 @@ export class ExecutionStorage {
     if (executedStatus) {
       return executedStatus;
     } else {
-      const mostRecentBlocksEncoded = await this._db.lrange(this.mostRecentBlocksKey, 0, 4);
-      let mostRecentBlocks: ExecutionBlock[];
-      try {
-        mostRecentBlocks = mostRecentBlocksEncoded.map((item) => JSON.parse(item ?? '')) as ExecutionBlock[];
-      } catch (err) {
-        mostRecentBlocks = [];
-      }
       /**
        * Find the most recent status
        */
@@ -158,7 +151,7 @@ export class ExecutionStorage {
       /**
        * Check if the most recent status is recent enough
        */
-      if (mostRecent?.block.number && mostRecentBlocks.find((block) => block.number < mostRecent.block.number)) {
+      if (mostRecent?.block.number && mostRecent.block.number > ttsBlockNumber) {
         return mostRecent;
       }
 
@@ -172,7 +165,7 @@ export class ExecutionStorage {
   async saveExecutedOrders(executedOrders: string[]) {
     const batchHandler = new BatchHandler();
     for (const orderId of executedOrders) {
-      const executionStatus = await this._orderbookStorage.getExecutionStatus(orderId);
+      const executionStatus = await this._orderbookStorage.getExecutionStatus(orderId, 0);
       if (executionStatus.status === 'matched-executed') {
         const ref = this._firestore
           .collection('executedOrders')
@@ -314,5 +307,15 @@ export class ExecutionStorage {
         return acc;
       }
     }, null);
+  }
+
+  async getTTSBlockNumber() {
+    const mostRecentBlock = await this.getMostRecentBlock();
+
+    if (!mostRecentBlock) {
+      return 0;
+    }
+
+    return mostRecentBlock.number - 8;
   }
 }
