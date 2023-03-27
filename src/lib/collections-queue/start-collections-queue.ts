@@ -11,9 +11,8 @@ export interface JobData {
 export type JobResult = void;
 
 export const getCollectionsQueue = () => {
-  const db = redis;
   const collectionsQueue = new Queue<JobData, JobResult>(`collections-queue:chain:${config.env.chainId}`, {
-    connection: db.duplicate(),
+    connection: redis,
     defaultJobOptions: {
       attempts: 5,
       backoff: {
@@ -33,7 +32,7 @@ export const startCollection = async (collection: string) => {
   const queue = getCollectionsQueue();
 
   const worker = new Worker<JobData, JobResult>(queue.name, `${__dirname}/worker.js`, {
-    connection: redis.duplicate(),
+    connection: redis,
     concurrency: 1,
     autorun: false,
     metrics: {

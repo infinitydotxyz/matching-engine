@@ -44,7 +44,7 @@ export const startCollection = async (collection: string) => {
   const queue = getCollectionsQueue();
 
   const worker = new Worker<JobData, JobResult>(queue.name, `${__dirname}/worker.js`, {
-    connection: redis.duplicate(),
+    connection: redis,
     concurrency: 1,
     autorun: false,
     metrics: {

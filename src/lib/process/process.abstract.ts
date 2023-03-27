@@ -143,7 +143,7 @@ export abstract class AbstractProcess<T extends { id: string }, U> extends Event
   protected async _close() {
     const queuePromise = this._queue.close();
     const workerPromise = this._worker.close();
-    await Promise.all([queuePromise, workerPromise]);
+    await Promise.all([queuePromise, workerPromise, this._queue.disconnect(), this._worker.disconnect()]);
     this._cancelProcessListeners?.();
   }
 
@@ -283,12 +283,14 @@ export abstract class AbstractProcess<T extends { id: string }, U> extends Event
         }
       }
       await queueEvents.close();
+      await queueEvents.disconnect();
       return {
         status: 'healthy',
         err: undefined
       };
     } catch (err) {
       await queueEvents.close();
+      await queueEvents.disconnect();
       return {
         status: 'unhealthy',
         err
