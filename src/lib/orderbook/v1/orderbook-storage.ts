@@ -459,7 +459,7 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
         return executing;
       }
       case 'inexecutable': {
-        const isWETHTooLow = executionStatus?.reason.includes('WETH balance of');
+        const isWETHTooLow = executionStatus?.reason?.includes?.('WETH balance of');
         if (isWETHTooLow) {
           const inexecutableStatus: ExecutionStatusMatchedInexecutableOfferWETHBalanceTooLow = {
             id: orderId,
