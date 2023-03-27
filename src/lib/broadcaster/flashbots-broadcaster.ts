@@ -33,14 +33,14 @@ export class FlashbotsBroadcaster extends Broadcaster<Options> {
 
     const fbTxn = {
       to: fullTxn.to,
+      type: 2,
       maxFeePerGas: options.targetBlock.maxFeePerGas,
       maxPriorityFeePerGas: options.targetBlock.maxPriorityFeePerGas,
-      type: 2,
+      gasLimit: txn.gasLimit,
       data: fullTxn.data,
-      value: fullTxn.value,
       chainId: fullTxn.chainId,
-      nonce: fullTxn.nonce,
-      gasLimit: fullTxn.gasLimit
+      value: fullTxn.value,
+      nonce: fullTxn.nonce
     };
 
     const bundleTxn: FlashbotsBundleTransaction = {
@@ -86,7 +86,7 @@ export class FlashbotsBroadcaster extends Broadcaster<Options> {
 
       logger.log(
         'flashbots-broadcaster',
-        `Simulated txn maxFeePerGas: ${simulatedMaxFeePerGas.toString()} gasUsed: ${totalGasUsed.toString()}`
+        `Simulated txn maxPriorityFeePerGas: ${simulatedMaxFeePerGas.toString()} gasUsed: ${totalGasUsed.toString()}`
       );
     } catch (err) {
       logger.error('flashbots-broadcaster', 'Error while simulating');
@@ -104,6 +104,17 @@ export class FlashbotsBroadcaster extends Broadcaster<Options> {
     }
 
     const result = await bundleResponse.wait();
+
+    try {
+      const sim = await bundleResponse.simulate();
+      if ('error' in sim) {
+        logger.error('flashbots-broadcaster', `Received error in simulation result ${sim.error}`);
+      } else if (sim.firstRevert) {
+        logger.error('flashbots-broadcaster', `Received revert in simulation result ${sim}`);
+      }
+    } catch (err) {
+      logger.error('flashbots-broadcaster', `Failed to get simulation result ${err}`);
+    }
 
     switch (result) {
       case FlashbotsBundleResolution.BundleIncluded: {

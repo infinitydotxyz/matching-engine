@@ -680,7 +680,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
           data: txData.data,
           value: '0',
           gas: 30_000_000,
-          gasPrice: 0
+          gasPrice: txData.maxFeePerGas
         },
         this._rpcProvider,
         {
@@ -802,10 +802,10 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
 
     const initialState = await this._loadInitialState([...nonNativeTransfers, ...nativeTransfers], currentBlock.number);
 
-    console.log(`Initial state: ${JSON.stringify(initialState, null, 2)}`);
+    // console.log(`Initial state: ${JSON.stringify(initialState, null, 2)}`);
 
-    console.log(`Transfers`);
-    console.log(JSON.stringify([...nonNativeTransfers, ...nativeTransfers], null, 2));
+    // console.log(`Transfers`);
+    // console.log(JSON.stringify([...nonNativeTransfers, ...nativeTransfers], null, 2));
     return this._simulate(initialState, results);
   }
 
@@ -849,6 +849,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
           if (!res.isValid) {
             this.log(`Match ${item.match.id} is not executable Reason: ${res.reason}`);
             item.isExecutable = false;
+            item.verificationResult = res;
             return { complete: false };
           }
         }

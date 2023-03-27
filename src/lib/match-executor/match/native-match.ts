@@ -194,17 +194,33 @@ export class NativeMatch extends OrderMatch {
     return {
       isValid: true,
       data: {
-        native: this._getExecutionInfo(offer, listing)
+        native: this._getExecutionInfo(offer, listing, targetBlock)
       }
     };
   }
 
-  protected _getExecutionInfo(offer: ChainOBOrder, listing: ChainOBOrder): NativeMatchExecutionInfo {
+  protected _getExecutionInfo(
+    offer: ChainOBOrder,
+    listing: ChainOBOrder,
+    targetBlock: BlockWithMaxFeePerGas
+  ): NativeMatchExecutionInfo {
     const currency = offer.execParams[1];
     const wethAddress = Common.Addresses.Weth[parseInt(this._chainId, 10)];
     const isWeth = currency === wethAddress;
 
+    const exchange = getExchangeAddress(this._chainId);
     let currencyTransfer: WethTransfer | EthTransfer;
+
+    const gasUsage = 300_000; // TODO improve this calculation
+    const gasCost = BigNumber.from(gasUsage).mul(targetBlock.maxFeePerGas);
+    const refund: WethTransfer = {
+      kind: TransferKind.WETH,
+      contract: wethAddress,
+      operator: exchange,
+      from: offer.signer,
+      to: exchange,
+      value: gasCost
+    };
 
     const value = BigNumber.from(listing.constraints[1]).lt(offer.constraints[1])
       ? BigNumber.from(listing.constraints[1])
@@ -213,7 +229,7 @@ export class NativeMatch extends OrderMatch {
       currencyTransfer = {
         kind: TransferKind.WETH,
         contract: wethAddress,
-        operator: getExchangeAddress(this._chainId),
+        operator: exchange,
         from: offer.signer,
         to: listing.signer,
         value: value.toString()
@@ -250,7 +266,7 @@ export class NativeMatch extends OrderMatch {
 
     return {
       isNative: true,
-      nativeExecutionTransfers: [currencyTransfer, ...erc721Transfers],
+      nativeExecutionTransfers: [currencyTransfer, refund, ...erc721Transfers],
       orderNonces,
       orderIds
     };
