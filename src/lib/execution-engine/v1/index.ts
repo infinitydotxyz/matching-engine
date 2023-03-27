@@ -260,31 +260,42 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
   async add(job: ExecutionEngineJob, id?: string): Promise<void>;
   async add(jobs: ExecutionEngineJob[]): Promise<void>;
   async add(job: ExecutionEngineJob | ExecutionEngineJob[], id?: string): Promise<void> {
-    const arr = Array.isArray(job) ? job : [job];
     if (Array.isArray(job) && id) {
       throw new Error(`Can only specify an id for a single job`);
-    }
-
-    const jobs: {
-      name: string;
-      data: JobDataType<ExecutionEngineJob>;
-      opts?: BulkJobOptions | undefined;
-    }[] = arr.map((item) => {
-      return {
-        name: `${item.id}`,
-        data: {
+    } else if (!Array.isArray(job) && id) {
+      await this.queue.add(
+        job.id,
+        {
           _processMetadata: {
             type: 'default'
           },
-          ...item
+          ...job
         },
-        opts: {
-          attempts: this._maxAttempts,
-          backoff: 0
-        }
-      };
-    });
-    await this._queue.addBulk(jobs);
+        { jobId: id }
+      );
+    } else {
+      const arr = Array.isArray(job) ? job : [job];
+      const jobs: {
+        name: string;
+        data: JobDataType<ExecutionEngineJob>;
+        opts?: BulkJobOptions | undefined;
+      }[] = arr.map((item) => {
+        return {
+          name: `${item.id}`,
+          data: {
+            _processMetadata: {
+              type: 'default'
+            },
+            ...item
+          },
+          opts: {
+            attempts: this._maxAttempts,
+            backoff: 0
+          }
+        };
+      });
+      await this._queue.addBulk(jobs);
+    }
   }
 
   protected async detectInvalidMatches(

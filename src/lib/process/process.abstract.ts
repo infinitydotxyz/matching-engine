@@ -72,27 +72,38 @@ export abstract class AbstractProcess<T extends { id: string }, U> extends Event
   async add(job: T, id?: string): Promise<void>;
   async add(jobs: T[]): Promise<void>;
   async add(job: T | T[], id?: string): Promise<void> {
-    const arr = Array.isArray(job) ? job : [job];
     if (Array.isArray(job) && id) {
       throw new Error(`Can only specify an id for a single job`);
-    }
-
-    const jobs: {
-      name: string;
-      data: JobDataType<T>;
-      opts?: BulkJobOptions | undefined;
-    }[] = arr.map((item) => {
-      return {
-        name: `${item.id}`,
-        data: {
+    } else if (!Array.isArray(job) && id) {
+      await this.queue.add(
+        job.id,
+        {
           _processMetadata: {
             type: 'default'
           },
-          ...item
-        }
-      };
-    });
-    await this._queue.addBulk(jobs);
+          ...job
+        },
+        { jobId: id }
+      );
+    } else {
+      const arr = Array.isArray(job) ? job : [job];
+      const jobs: {
+        name: string;
+        data: JobDataType<T>;
+        opts?: BulkJobOptions | undefined;
+      }[] = arr.map((item) => {
+        return {
+          name: `${item.id}`,
+          data: {
+            _processMetadata: {
+              type: 'default'
+            },
+            ...item
+          }
+        };
+      });
+      await this._queue.addBulk(jobs);
+    }
   }
 
   public async run(): Promise<void> {
