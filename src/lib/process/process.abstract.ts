@@ -30,8 +30,13 @@ export abstract class AbstractProcess<T extends { id: string }, U> extends Event
     logger.warn(this.queueName, message);
   }
 
+  protected _connections: Redis[];
+
   constructor(protected _db: Redis, protected queueName: string, options?: ProcessOptions) {
     super();
+    const queueConnection = this._db.duplicate();
+    const workerConnection = this._db.duplicate();
+    this._connections = [queueConnection, workerConnection];
     const metrics =
       options?.enableMetrics === true
         ? {
@@ -40,7 +45,7 @@ export abstract class AbstractProcess<T extends { id: string }, U> extends Event
         : options?.enableMetrics;
 
     this._queue = new Queue(this.queueName, {
-      connection: this._db.duplicate(),
+      connection: queueConnection,
       defaultJobOptions: {
         attempts: options?.attempts ?? 5,
         backoff: {
@@ -57,7 +62,7 @@ export abstract class AbstractProcess<T extends { id: string }, U> extends Event
       this.queueName,
       this._processJob.bind(this),
       {
-        connection: this._db.duplicate(),
+        connection: workerConnection,
         concurrency: options?.concurrency ?? 1,
         autorun: false,
         metrics: metrics || undefined
@@ -143,7 +148,14 @@ export abstract class AbstractProcess<T extends { id: string }, U> extends Event
   protected async _close() {
     const queuePromise = this._queue.close();
     const workerPromise = this._worker.close();
-    await Promise.all([queuePromise, workerPromise, this._queue.disconnect(), this._worker.disconnect()]);
+    await Promise.all([queuePromise, workerPromise, this._queue.disconnect(), this._worker.disconnect()]).catch(
+      (err) => {
+        this.error(`Failed to fully close. ${err}`);
+      }
+    );
+    for (const connection of this._connections) {
+      connection.disconnect();
+    }
     this._cancelProcessListeners?.();
   }
 
@@ -252,8 +264,9 @@ export abstract class AbstractProcess<T extends { id: string }, U> extends Event
   }
 
   public async checkHealth(): Promise<HealthInfo['healthStatus']> {
+    const connection = this._db.duplicate();
     const queueEvents = new QueueEvents(this.queueName, {
-      connection: this._db.duplicate(),
+      connection,
       autorun: true
     });
 
@@ -284,6 +297,7 @@ export abstract class AbstractProcess<T extends { id: string }, U> extends Event
       }
       await queueEvents.close();
       await queueEvents.disconnect();
+      connection.disconnect();
       return {
         status: 'healthy',
         err: undefined
@@ -291,6 +305,7 @@ export abstract class AbstractProcess<T extends { id: string }, U> extends Event
     } catch (err) {
       await queueEvents.close();
       await queueEvents.disconnect();
+      connection.disconnect();
       return {
         status: 'unhealthy',
         err

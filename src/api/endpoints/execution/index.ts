@@ -20,7 +20,6 @@ export default async function register(fastify: FastifyInstance) {
 
   fastify.get(`${base}`, async () => {
     const { executionEngine } = await getExecutionEngine();
-
     const healthInfo = await executionEngine.getHealthInfo();
 
     await executionEngine.close();
