@@ -39,7 +39,8 @@ export class FlashbotsBroadcaster extends Broadcaster<Options> {
       data: fullTxn.data,
       value: fullTxn.value,
       chainId: fullTxn.chainId,
-      nonce: fullTxn.nonce
+      nonce: fullTxn.nonce,
+      gasLimit: fullTxn.gasLimit
     };
 
     const bundleTxn: FlashbotsBundleTransaction = {
@@ -51,7 +52,7 @@ export class FlashbotsBroadcaster extends Broadcaster<Options> {
     try {
       signedBundle = await this._flashbotsProvider.signBundle([bundleTxn]);
     } catch (err) {
-      logger.error('flashbots-broadcaster', `Failed to sign bundle ${JSON.stringify(err, null, 2)}`);
+      logger.error('flashbots-broadcaster', `Failed to sign bundle ${err}`);
       throw err;
     }
 

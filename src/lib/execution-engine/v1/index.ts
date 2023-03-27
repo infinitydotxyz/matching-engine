@@ -226,11 +226,14 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
 
       logger.log('execution-engine', `Block ${target.number}. Txn generated.`);
 
-      const { receipt } = await this._broadcaster.broadcast(txnData, {
-        targetBlock: targetWithGas,
-        currentBlock: current,
-        signer: this._matchExecutor.initiator
-      });
+      const { receipt } = await this._broadcaster.broadcast(
+        { ...txnData, gasLimit: BigNumber.from(balanceSimulationResult.data.gasUsage).mul(110).div(100).toString() },
+        {
+          targetBlock: targetWithGas,
+          currentBlock: current,
+          signer: this._matchExecutor.initiator
+        }
+      );
 
       if (receipt.status === 1) {
         const gasUsage = receipt.gasUsed.toString();
@@ -256,7 +259,6 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         receipt
       );
     } catch (err) {
-      console.error(err);
       if (err instanceof InvalidMatchError) {
         // throw the error to trigger a retry
         throw err;
@@ -658,7 +660,14 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     maxFeePerGas: string;
     maxPriorityFeePerGas: string;
     data: string;
-  }): Promise<ValidityResultWithData<{ totalBalanceDiff: string; ethBalanceDiff: string; wethBalanceDiff: string }>> {
+  }): Promise<
+    ValidityResultWithData<{
+      totalBalanceDiff: string;
+      ethBalanceDiff: string;
+      wethBalanceDiff: string;
+      gasUsage: string;
+    }>
+  > {
     if (!config.env.isForkingEnabled) {
       const matchExecutor = this._matchExecutor.address;
       const weth = Common.Addresses.Weth[parseInt(this._chainId, 10)];
@@ -670,7 +679,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
           data: txData.data,
           value: '0',
           gas: 30_000_000,
-          gasPrice: txData.maxFeePerGas
+          gasPrice: 0
         },
         this._rpcProvider,
         {
@@ -710,11 +719,15 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       );
       const wethBalanceDiff = BigNumber.from(finalState[matchExecutor]?.tokenBalanceState?.[`erc20:${weth}`] ?? '0');
       const totalBalanceDiff = ethBalanceDiff.add(wethBalanceDiff);
-
+      const gasUsed =
+        'gasUsed' in trace && typeof trace.gasUsed === 'string'
+          ? BigNumber.from(trace?.gasUsed).toString()
+          : '30000000';
       if (totalBalanceDiff.gte(0)) {
         logger.log('execution-engine', `Match executor received ${formatEther(totalBalanceDiff.toString())} ETH/WETH`);
         return {
           data: {
+            gasUsage: gasUsed,
             totalBalanceDiff: totalBalanceDiff.toString(),
             ethBalanceDiff: ethBalanceDiff.toString(),
             wethBalanceDiff: wethBalanceDiff.toString()
@@ -737,6 +750,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     return {
       isValid: true,
       data: {
+        gasUsage: '30000000',
         totalBalanceDiff: BigNumber.from(0).toString(),
         ethBalanceDiff: BigNumber.from(0).toString(),
         wethBalanceDiff: BigNumber.from(0).toString()
