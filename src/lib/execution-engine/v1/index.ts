@@ -26,7 +26,6 @@ import {
   NotIncludedExecutionOrder,
   PendingExecutionOrder
 } from '@/common/execution-order';
-import { logger } from '@/common/logger';
 import { config } from '@/config';
 import { Broadcaster } from '@/lib/broadcaster/broadcaster.abstract';
 import { MatchExecutor } from '@/lib/match-executor/match-executor';
@@ -82,7 +81,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
      * start processing jobs from the queue
      */
     const runPromise = super._run().catch((err: Error) => {
-      logger.error('execution-engine', ` Execution engine - Unexpected error: ${err.message}`);
+      this.error(` Execution engine - Unexpected error: ${err.message}`);
     });
     await runPromise;
   }
@@ -93,11 +92,10 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     const initiatedAt = job.timestamp;
     try {
       if (target.timestamp < this._startTimestampSeconds) {
-        logger.warn(
-          'block-listener',
+        this.warn(
           `Received block ${job.data.targetBlock.number} with timestamp ${job.data.targetBlock.timestamp} which is older than the start time ${this._startTimestampSeconds}. Skipping...`
         );
-        return;
+        return {};
       }
 
       const priorityFeeWei = config.broadcasting.priorityFee;
@@ -111,8 +109,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         maxFeePerGas: targetMaxFeePerGasWei.toString()
       };
 
-      logger.log(
-        'execution-engine',
+      this.log(
         `Generating txn for target: ${target.number}. Current base fee: ${formatUnits(
           current.baseFeePerGas,
           'gwei'
@@ -183,13 +180,10 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         }
       );
 
-      logger.log(
-        'execution-engine',
-        `Block ${target.number}. Found ${initializedMatches.length} order matches before simulation.`
-      );
+      this.log(`Block ${target.number}. Found ${initializedMatches.length} order matches before simulation.`);
 
       if (failedMatches.length > 0) {
-        logger.warn('execution-engine', `Block ${target.number}. Failed to prepare ${failedMatches.length} matches`);
+        this.warn(`Block ${target.number}. Failed to prepare ${failedMatches.length} matches`);
       }
 
       const { executable, inexecutable } = await this.simulate(initializedMatches, targetWithGas, current);
@@ -204,10 +198,10 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       if (!txnData) {
         this.log(`Block ${target.number}. No matches found`);
         await this.saveSkippedBlock(targetWithGas, inexecutable, initiatedAt, 'No matches found');
-        return;
+        return {};
       }
 
-      logger.log('execution-engine', `Block ${target.number}. Simulating balance changes`);
+      this.log(`Block ${target.number}. Simulating balance changes`);
       const balanceSimulationResult = await this.simulateBalanceChanges(txnData);
       if (!balanceSimulationResult.isValid) {
         await this.detectInvalidMatches(txnMatches, targetWithGas, current);
@@ -220,11 +214,11 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
 
       this.savePendingBlock(targetWithGas, txnMatches, inexecutable, balanceSimulationResult, initiatedAt).catch(
         (err) => {
-          logger.error('execution-engine', `Failed to save pending block: ${err.message}`);
+          this.error(`Failed to save pending block: ${err.message}`);
         }
       );
 
-      logger.log('execution-engine', `Block ${target.number}. Txn generated.`);
+      this.log(`Block ${target.number}. Txn generated.`);
 
       const { receipt } = await this._broadcaster.broadcast(
         { ...txnData, gasLimit: BigNumber.from(balanceSimulationResult.data.gasUsage).mul(110).div(100).toString() },
@@ -238,16 +232,10 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       if (receipt.status === 1) {
         const gasUsage = receipt.gasUsed.toString();
         await this._savePendingMatches(txnMatches.map((item) => item.match));
-        logger.log(
-          'execution-engine',
-          `Block ${target.number}. Txn ${receipt.transactionHash} executed successfully. Gas used: ${gasUsage}`
-        );
+        this.log(`Block ${target.number}. Txn ${receipt.transactionHash} executed successfully. Gas used: ${gasUsage}`);
       } else {
-        logger.log('execution-engine', `Block ${target.number}. Txn ${receipt.transactionHash} execution failed`);
-        logger.log(
-          'execution-engine',
-          `Block ${target.number}. Txn ${receipt.transactionHash} receipt: ${JSON.stringify(receipt, null, 2)}`
-        );
+        this.log(`Block ${target.number}. Txn ${receipt.transactionHash} execution failed`);
+        this.log(`Block ${target.number}. Txn ${receipt.transactionHash} receipt: ${JSON.stringify(receipt, null, 2)}`);
       }
 
       await this.saveBlockResult(
@@ -258,12 +246,14 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         initiatedAt,
         receipt
       );
+      return {};
     } catch (err) {
       if (err instanceof InvalidMatchError) {
         // throw the error to trigger a retry
         throw err;
       }
-      logger.error('execution-engine', `failed to process job for block ${target.number} ${err}`);
+      this.warn(`failed to process job for block ${target.number} ${err}`);
+      return {};
     }
   }
 
@@ -689,7 +679,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
 
       if ('error' in trace && trace.error) {
         if ('revertReason' in trace && trace.revertReason === 'Transaction not non-negative') {
-          logger.error('balance-simulation', `Transaction not non-negative ${JSON.stringify(trace, null, 2)}`);
+          this.error(`Transaction not non-negative ${JSON.stringify(trace, null, 2)}`);
           return {
             isValid: false,
             reason: 'transaction reverted',
@@ -697,7 +687,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
           };
         }
         const error = trace.error;
-        logger.error('balance-simulation', `Error while simulating balance changes ${error}`);
+        this.error(`Error while simulating balance changes ${error}`);
         try {
           await this._rpcProvider.estimateGas({
             ...txData
@@ -724,7 +714,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
           ? BigNumber.from(trace?.gasUsed).toString()
           : '30000000';
       if (totalBalanceDiff.gte(0)) {
-        logger.log('execution-engine', `Match executor received ${formatEther(totalBalanceDiff.toString())} ETH/WETH`);
+        this.log(`Match executor received ${formatEther(totalBalanceDiff.toString())} ETH/WETH`);
         return {
           data: {
             gasUsage: gasUsed,
@@ -736,8 +726,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         };
       }
 
-      logger.warn(
-        'execution-engine',
+      this.warn(
         `Match executor lost ${formatEther(totalBalanceDiff.mul(-1).toString())} ETH/WETH. Tx ${JSON.stringify(txData)}`
       );
       return {
@@ -774,7 +763,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
           const res = await match.verifyMatchAtTarget(targetBlock, currentBlock);
           return { match, verificationResult: res };
         } catch (err) {
-          logger.warn('execution-engine', `Failed to verify match ${match.id} ${err}`);
+          this.warn(`Failed to verify match ${match.id} ${err}`);
           return {
             match,
             verificationResult: {
@@ -836,7 +825,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
           if (!res.isValid) {
             item.isExecutable = false;
             item.verificationResult = res;
-            logger.log('execution-engine', `Match ${item.match.id} is not executable Reason: ${res.reason}`);
+            this.log(`Match ${item.match.id} is not executable Reason: ${res.reason}`);
           }
         }
       }
@@ -847,7 +836,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         if (item.isExecutable && item.verificationResult.isValid) {
           const res = simulator.simulateMatch(item.verificationResult.data.native);
           if (!res.isValid) {
-            logger.log('execution-engine', `Match ${item.match.id} is not executable Reason: ${res.reason}`);
+            this.log(`Match ${item.match.id} is not executable Reason: ${res.reason}`);
             item.isExecutable = false;
             return { complete: false };
           }
@@ -926,7 +915,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
                 };
               })
               .catch((err) => {
-                logger.error('execution-engine', `failed to load initial state ${err}`);
+                this.error(`failed to load initial state ${err}`);
               });
           }
           break;
@@ -944,7 +933,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
                 };
               })
               .catch((err) => {
-                logger.error('execution-engine', `failed to load initial state ${err}`);
+                this.error(`failed to load initial state ${err}`);
               });
           }
           const allowanceId = `${TransferKind.WETH}:allowance:${transfer.from}:${transfer.operator}`;
@@ -960,7 +949,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
                 };
               })
               .catch((err) => {
-                logger.error('execution-engine', `failed to load initial state ${err}`);
+                this.error(`failed to load initial state ${err}`);
               });
           }
           break;
@@ -976,7 +965,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
                 };
               })
               .catch((err) => {
-                logger.error('execution-engine', `failed to load initial state ${err}`);
+                this.error(`failed to load initial state ${err}`);
               });
           }
           break;
