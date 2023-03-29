@@ -9,6 +9,7 @@ import {
   ExecutionStatusMatchedExecuted,
   ExecutionStatusMatchedExecuting,
   ExecutionStatusMatchedInexecutable,
+  ExecutionStatusMatchedInexecutableOfferWETHAllowanceTooLow,
   ExecutionStatusMatchedInexecutableOfferWETHBalanceTooLow,
   ExecutionStatusMatchedNoMatches,
   ExecutionStatusMatchedNotIncluded,
@@ -459,11 +460,34 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
         return executing;
       }
       case 'inexecutable': {
-        const isWETHTooLow = executionStatus?.reason?.includes?.('WETH balance of');
-        if (isWETHTooLow) {
+        const isWETHBalanceTooLow = executionStatus?.reason?.includes?.('WETH balance of');
+        const isWETHAllowanceTooLow = executionStatus?.reason?.includes?.('WETH allowance of');
+        if (isWETHBalanceTooLow) {
           const inexecutableStatus: ExecutionStatusMatchedInexecutableOfferWETHBalanceTooLow = {
             id: orderId,
             status: 'matched-inexecutable-offer-weth-too-low',
+            matchInfo: {
+              side: matchOperationMetadata.side,
+              proposerInitiatedAt: matchOperationMetadata.timing.proposerInitiatedAt,
+              matchedAt: matchOperationMetadata.timing.matchedAt
+            },
+            executionInfo: {
+              reason: executionStatus.reason,
+              initiatedAt: executionStatus.timing.initiatedAt,
+              matchedOrderId: executionStatus.matchedOrderId,
+              matchId: executionStatus.matchId,
+              blockNumber: executionStatus.block.number,
+              baseFeePerGas: executionStatus.block.baseFeePerGas,
+              maxFeePerGas: executionStatus.block.maxFeePerGas,
+              maxPriorityFeePerGas: executionStatus.block.maxPriorityFeePerGas
+            }
+          };
+
+          return inexecutableStatus;
+        } else if (isWETHAllowanceTooLow) {
+          const inexecutableStatus: ExecutionStatusMatchedInexecutableOfferWETHAllowanceTooLow = {
+            id: orderId,
+            status: 'matched-inexecutable-offer-weth-allowance-too-low',
             matchInfo: {
               side: matchOperationMetadata.side,
               proposerInitiatedAt: matchOperationMetadata.timing.proposerInitiatedAt,
