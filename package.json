@@ -25,9 +25,10 @@
     "test": "jest",
     "build:contracts": "forge build",
     "create-match": "npx cross-env ENABLE_FORKING=1 ts-node -r dotenv/config ./src/create-match.ts",
-    "deploy:prod:goerli:me": "npm run build && gcloud app deploy -q --appyaml=app.matching-engine.goerli.yaml --project=nftc-infinity",
-    "deploy:prod:goerli:ee": "npm run build && gcloud app deploy -q --appyaml=app.execution-engine.goerli.yaml --project=nftc-infinity",
-    "deploy:prod:goerli:api": "npm run build && gcloud app deploy -q --appyaml=app.api.goerli.yaml --project=nftc-infinity"
+    "deploy:prod:goerli:me": "npm run build && gcloud app deploy -q --appyaml=app.matching-engine.goerli.yaml --project=nftc-infinity --no-promote",
+    "deploy:prod:goerli:ee": "npm run build && gcloud app deploy -q --appyaml=app.execution-engine.goerli.yaml --project=nftc-infinity --no-promote",
+    "deploy:prod:goerli:api": "npm run build && gcloud app deploy -q --appyaml=app.api.goerli.yaml --project=nftc-infinity",
+    "deploy:prod:goerli:redis": "npx cross-env CHAIN_ID=5 cross-env PROJECT_ID=nftc-infinity ts-node -r dotenv/config ./src/deploy/index.ts"
   },
   "dependencies": {
     "@flashbots/ethers-provider-bundle": "^0.6.1",
@@ -48,6 +49,7 @@
     "winston": "^3.8.2"
   },
   "devDependencies": {
+    "@google-cloud/redis": "^3.2.1",
     "@nomiclabs/hardhat-ethers": "^2.2.1",
     "@openzeppelin/contracts": "^4.8.0",
     "@trivago/prettier-plugin-sort-imports": "^4.0.0",

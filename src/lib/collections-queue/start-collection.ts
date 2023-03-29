@@ -31,7 +31,7 @@ export const getProcesses = (collection: string) => {
 
   const orderRelay = new OrderRelay(matchingEngine, firestore, storage, redlock, orderbook, redis, collection, {
     debug: config.env.debug,
-    concurrency: 10,
+    concurrency: 1,
     enableMetrics: {
       maxDataPoints: MetricsTime.ONE_WEEK * 2
     }
