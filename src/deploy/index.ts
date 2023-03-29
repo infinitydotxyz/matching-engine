@@ -19,7 +19,7 @@ void deployRedis({
   chainName,
   region,
   projectId,
-  version: '1',
+  version: '2',
   memorySizeGb: 6,
   replicaCount: 1
 });

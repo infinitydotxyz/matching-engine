@@ -188,7 +188,31 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
 
       const { executable, inexecutable } = await this.simulate(initializedMatches, targetWithGas, current);
 
-      const txnMatches = executable.map((item) => item.match);
+      let txnMatches = executable.map((item) => item.match);
+
+      const maxMatches = 20;
+      if (txnMatches.length > maxMatches) {
+        this.log(
+          `Block ${target.number} exceeds the max number of matches. Matches ${txnMatches.length}. Limit ${maxMatches}`
+        );
+        const matchesToExecute = txnMatches.slice(0, maxMatches);
+        const pendingMatches = txnMatches.slice(maxMatches);
+        txnMatches = matchesToExecute;
+        this.log(`Block ${target.number}. Trimmed ${pendingMatches.length} excess matches`);
+        inexecutable.push(
+          ...pendingMatches.map((match) => {
+            return {
+              match,
+              verificationResult: {
+                isValid: false as const,
+                reason: 'Low priority',
+                isTransient: true
+              },
+              isExecutable: false as const
+            };
+          })
+        );
+      }
 
       this.log(`Block ${target.number}. Found ${txnMatches.length} order matches after simulation.`);
       this.log(`Block ${target.number}. Valid matches: ${txnMatches.map((item) => item.id)}`);
@@ -1035,13 +1059,10 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         externalFulfillments,
         matches: matchOrders
       };
-
-      console.log('batch', JSON.stringify(batch, null, 2));
       const txn = this._matchExecutor.getBrokerTxn(batch, targetBlock);
 
       return { txn, isNative: false };
     } else {
-      console.log('Native txn', JSON.stringify(matchOrders, null, 2));
       const txn = this._matchExecutor.getNativeTxn(matchOrders, targetBlock);
 
       return { txn, isNative: true };
