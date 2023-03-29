@@ -108,7 +108,10 @@ export class FlashbotsBroadcaster extends Broadcaster<Options> {
     try {
       const sim = await bundleResponse.simulate();
       if ('error' in sim) {
-        logger.error('flashbots-broadcaster', `Received error in simulation result ${sim.error}`);
+        logger.error(
+          'flashbots-broadcaster',
+          `Received error in simulation result ${(JSON.stringify(sim.error), null, 2)}`
+        );
       } else if (sim.firstRevert) {
         logger.error('flashbots-broadcaster', `Received revert in simulation result ${sim}`);
       }

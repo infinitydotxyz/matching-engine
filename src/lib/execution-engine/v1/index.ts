@@ -722,6 +722,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
           };
         }
         const error = trace.error;
+        console.log(JSON.stringify(trace, null, 2));
         this.error(`Error while simulating balance changes ${error}`);
         try {
           await this._rpcProvider.estimateGas({

@@ -1,6 +1,6 @@
 
-BASE_URL="https://matching-engine-goerli-dot-nftc-infinity.ue.r.appspot.com"
-# BASE_URL="https://20230328t094750-dot-matching-engine-goerli-dot-nftc-infinity.ue.r.appspot.com"
+# BASE_URL="https://matching-engine-goerli-dot-nftc-infinity.ue.r.appspot.com"
+BASE_URL="https://20230329t081308-dot-matching-engine-goerli-dot-nftc-infinity.ue.r.appspot.com"
 
 # Goeril Azuki
 curl -H "x-api-key: $API_KEY" -X PUT $BASE_URL/matching/collection/0x10b8b56d53bfa5e374f38e6c0830bad4ebee33e6

@@ -31,6 +31,7 @@
     "deploy:prod:goerli:redis": "npx cross-env CHAIN_ID=5 cross-env PROJECT_ID=nftc-infinity ts-node -r dotenv/config ./src/deploy/index.ts"
   },
   "dependencies": {
+    "@fastify/cors": "^8.2.1",
     "@flashbots/ethers-provider-bundle": "^0.6.1",
     "@georgeroman/evm-tx-simulator": "^0.0.12",
     "@infinityxyz/lib": "^1.340.0",

@@ -145,6 +145,7 @@ export default async function register(fastify: FastifyInstance) {
       return { status: 'ok' };
     });
   }
+
   fastify.get(`${base}/order/:order`, async (request) => {
     const orderId =
       typeof request.params == 'object' &&

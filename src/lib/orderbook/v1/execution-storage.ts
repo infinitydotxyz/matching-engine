@@ -290,11 +290,9 @@ export class ExecutionStorage {
   }
 
   async getMostRecentBlock() {
-    const result = await this._db.lrange(this.mostRecentBlocksKey, 0, -1);
-    return result.reduce((acc: ExecutionBlock | null, item) => {
+    const blocks = await this.getBlocks();
+    return blocks.reduce((acc: ExecutionBlock | null, block) => {
       try {
-        const block = JSON.parse(item) as ExecutionBlock;
-
         if (!acc) {
           return block;
         }
@@ -307,6 +305,20 @@ export class ExecutionStorage {
         return acc;
       }
     }, null);
+  }
+
+  async getBlocks(): Promise<ExecutionBlock[]> {
+    const result = await this._db.lrange(this.mostRecentBlocksKey, 0, -1);
+
+    return result
+      .map((blockStr) => {
+        try {
+          return JSON.parse(blockStr) as ExecutionBlock;
+        } catch (err) {
+          return null;
+        }
+      })
+      .filter((item) => !!item) as ExecutionBlock[];
   }
 
   async getTTSBlockNumber() {
