@@ -52,6 +52,14 @@ export type ExecutionEngineJob = {
 export type ExecutionEngineResult = unknown;
 
 export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, ExecutionEngineResult> {
+  /**
+   * flashbots bundles have a max request body size of 131072 bytes
+   * https://discord.com/channels/755466764501909692/755466764501909695/1059557159920210000
+   *
+   * MAX_CALLDATA_SIZE = 130000 (a little less to account for the rest of the request body)
+   */
+  protected MAX_CALLDATA_SIZE = 130000;
+
   protected _version: string;
 
   protected _startTimestampSeconds: number;
@@ -188,36 +196,43 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
 
       const { executable, inexecutable } = await this.simulate(initializedMatches, targetWithGas, current);
 
-      let txnMatches = executable.map((item) => item.match);
+      const txnMatches = executable.map((item) => item.match);
 
-      const maxMatches = 20;
-      if (txnMatches.length > maxMatches) {
-        this.log(
-          `Block ${target.number} exceeds the max number of matches. Matches ${txnMatches.length}. Limit ${maxMatches}`
-        );
-        const matchesToExecute = txnMatches.slice(0, maxMatches);
-        const pendingMatches = txnMatches.slice(maxMatches);
-        txnMatches = matchesToExecute;
-        this.log(`Block ${target.number}. Trimmed ${pendingMatches.length} excess matches`);
-        inexecutable.push(
-          ...pendingMatches.map((match) => {
-            return {
-              match,
+      this.log(`Block ${target.number}. Found ${txnMatches.length} order matches after simulation`);
+      this.log(`Block ${target.number}. Valid matches: ${txnMatches.map((item) => item.id)}`);
+
+      let txnData;
+      while (txnMatches.length > 0) {
+        /**
+         * attempt to get the calldata under the max calldata size
+         */
+        const { txn } = await this._generateTxn(txnMatches, targetWithGas, current);
+        const calldataSize = new Blob([txn?.data ?? '']).size;
+        if (calldataSize <= this.MAX_CALLDATA_SIZE) {
+          this.log(`Block ${target.number}. Valid calldata size ${calldataSize}`);
+          txnData = txn;
+          break;
+        } else {
+          // calldata is too large need to split
+          this.log(
+            `Block ${target.number} has ${txnMatches.length} with calldata size of ${calldataSize}. Splitting into multiple bundles`
+          );
+          const lastMatch = txnMatches.pop();
+          if (!lastMatch) {
+            this.error(`Block ${target.number}. Unexpected condition! Last match was nullish`);
+          } else {
+            inexecutable.push({
+              match: lastMatch,
               verificationResult: {
                 isValid: false as const,
                 reason: 'Low priority',
                 isTransient: true
               },
               isExecutable: false as const
-            };
-          })
-        );
+            });
+          }
+        }
       }
-
-      this.log(`Block ${target.number}. Found ${txnMatches.length} order matches after simulation.`);
-      this.log(`Block ${target.number}. Valid matches: ${txnMatches.map((item) => item.id)}`);
-
-      const { txn: txnData } = await this._generateTxn(txnMatches, targetWithGas, current);
 
       if (!txnData) {
         this.log(`Block ${target.number}. No matches found`);
@@ -225,7 +240,10 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         return {};
       }
 
-      this.log(`Block ${target.number}. Simulating balance changes`);
+      this.log(
+        `Block ${target.number}. Found ${txnMatches.length} order matches after limiting calldata size. Simulating balance changes...`
+      );
+
       const balanceSimulationResult = await this.simulateBalanceChanges(txnData);
       if (!balanceSimulationResult.isValid) {
         await this.detectInvalidMatches(txnMatches, targetWithGas, current);
