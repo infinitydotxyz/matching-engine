@@ -28,7 +28,11 @@
     "deploy:prod:goerli:me": "npm run build && gcloud app deploy -q --appyaml=app.matching-engine.goerli.yaml --project=nftc-infinity --no-promote",
     "deploy:prod:goerli:ee": "npm run build && gcloud app deploy -q --appyaml=app.execution-engine.goerli.yaml --project=nftc-infinity --no-promote",
     "deploy:prod:goerli:api": "npm run build && gcloud app deploy -q --appyaml=app.api.goerli.yaml --project=nftc-infinity",
-    "deploy:prod:goerli:redis": "npx cross-env CHAIN_ID=5 cross-env PROJECT_ID=nftc-infinity ts-node -r dotenv/config ./src/deploy/index.ts"
+    "deploy:prod:goerli:redis": "npx cross-env CHAIN_ID=5 cross-env PROJECT_ID=nftc-infinity ts-node -r dotenv/config ./src/deploy/index.ts",
+    "deploy:prod:mainnet:redis": "npx cross-env CHAIN_ID=1 cross-env PROJECT_ID=nftc-infinity ts-node -r dotenv/config ./src/deploy/index.ts",
+    "deploy:prod:mainnet:me": "npm run build && gcloud app deploy -q --appyaml=app.matching-engine.mainnet.yaml --project=nftc-infinity --no-promote",
+    "deploy:prod:mainnet:ee": "npm run build && gcloud app deploy -q --appyaml=app.execution-engine.mainnet.yaml --project=nftc-infinity --no-promote",
+    "deploy:prod:mainnet:api": "npm run build && gcloud app deploy -q --appyaml=app.api.mainnet.yaml --project=nftc-infinity"
   },
   "dependencies": {
     "@fastify/cors": "^8.2.1",

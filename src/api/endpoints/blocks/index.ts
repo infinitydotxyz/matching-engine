@@ -1,4 +1,3 @@
-import { ethers } from 'ethers';
 import { FastifyInstance } from 'fastify';
 
 import { getOrderbook } from '@/lib/collections-queue/start-collection';

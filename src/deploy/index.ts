@@ -19,7 +19,7 @@ void deployRedis({
   chainName,
   region,
   projectId,
-  version: '2',
-  memorySizeGb: 6,
+  version: '1',
+  memorySizeGb: chainId === ChainId.Mainnet ? 40 : 2,
   replicaCount: 1
 });
