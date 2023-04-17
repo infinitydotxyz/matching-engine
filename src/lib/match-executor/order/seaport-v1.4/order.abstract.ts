@@ -40,6 +40,8 @@ export abstract class SeaportV14Order extends NonNativeOrder<SeaportV14.Types.Or
           isTransient: signatureResult.isTransient,
           reason: signatureResult.reason
         };
+      } else {
+        this._order.params.signature = signatureResult.data;
       }
     }
     return {

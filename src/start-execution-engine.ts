@@ -10,8 +10,14 @@ import { MatchExecutor } from './lib/match-executor/match-executor';
 import { NonceProvider } from './lib/match-executor/nonce-provider/nonce-provider';
 import { OrderbookV1 } from './lib/orderbook';
 
+let hasValidated = false;
 export const getExecutionEngine = async () => {
-  const network = await validateNetworkConfig(getNetworkConfig(config.env.chainId));
+  let network = await getNetworkConfig(config.env.chainId);
+  if (!hasValidated) {
+    network = await validateNetworkConfig(Promise.resolve(network));
+    hasValidated = true;
+  }
+
   const orderbookStorage = new OrderbookV1.OrderbookStorage(redis, firestore, config.env.chainId);
   const nonceProvider = new NonceProvider(
     config.env.chainId,

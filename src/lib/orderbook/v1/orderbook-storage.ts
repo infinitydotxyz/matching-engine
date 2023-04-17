@@ -634,6 +634,10 @@ export class OrderbookStorage extends AbstractOrderbookStorage<Order, OrderData>
         .doc(orderId) as FirebaseFirestore.DocumentReference<ExecutionStatusMatchedExecuted>;
     });
 
+    if (refs.length === 0) {
+      return [];
+    }
+
     const orderStatuses = await (
       this._firestore.getAll(...refs) as Promise<FirebaseFirestore.DocumentSnapshot<ExecutionStatusMatchedExecuted>[]>
     ).then((snaps: FirebaseFirestore.DocumentSnapshot<ExecutionStatusMatchedExecuted>[]) => {

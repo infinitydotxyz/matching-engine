@@ -40,6 +40,8 @@ export abstract class SeaportOrder extends NonNativeOrder<Seaport.Types.OrderCom
           isTransient: signatureResult.isTransient,
           reason: signatureResult.reason
         };
+      } else {
+        this._order.params.signature = signatureResult.data;
       }
     }
     return {

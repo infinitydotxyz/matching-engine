@@ -1,3 +1,4 @@
+import { Blob } from 'buffer';
 import { BulkJobOptions, Job } from 'bullmq';
 import { BigNumber, BigNumberish, ethers } from 'ethers';
 import { formatEther, formatUnits } from 'ethers/lib/utils';
@@ -171,6 +172,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
           };
         })
       );
+      await queue.onIdle();
 
       const { initializedMatches, failedMatches } = initializedMatchResults.reduce(
         (acc, item) => {
