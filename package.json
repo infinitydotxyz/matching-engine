@@ -40,6 +40,7 @@
     "@georgeroman/evm-tx-simulator": "^0.0.12",
     "@infinityxyz/lib": "^1.340.1",
     "@reservoir0x/sdk": "0.0.324",
+    "async-mutex": "^0.4.0",
     "bullmq": "^3.4.1",
     "dotenv": "^16.0.1",
     "ethers": "^5.7.2",
