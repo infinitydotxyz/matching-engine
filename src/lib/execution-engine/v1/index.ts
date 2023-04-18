@@ -717,14 +717,20 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       const matchExecutor = this._matchExecutor.address;
       const weth = Common.Addresses.Weth[parseInt(this._chainId, 10)];
 
+      const maxGasUsage = 30_000_000;
+      const oneEth = BigNumber.from(10).pow(18);
+      const gasCost = BigNumber.from(maxGasUsage).mul(txData.maxFeePerGas);
       const trace = await getCallTrace(
         {
           from: txData.from,
           to: txData.to,
           data: txData.data,
           value: '0',
-          gas: 30_000_000,
-          gasPrice: txData.maxFeePerGas
+          gas: maxGasUsage,
+          gasPrice: txData.maxFeePerGas,
+          balanceOverrides: {
+            [matchExecutor]: gasCost.add(oneEth)
+          }
         },
         this._rpcProvider,
         {
@@ -769,6 +775,10 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
         'gasUsed' in trace && typeof trace.gasUsed === 'string'
           ? BigNumber.from(trace?.gasUsed).toString()
           : '30000000';
+
+      const estimatedMaxGasCost = BigNumber.from(gasUsed).mul(txData.maxFeePerGas);
+      this.log(`Estimated max gas cost: ${formatEther(estimatedMaxGasCost.toString())} ETH`);
+
       if (totalBalanceDiff.gte(0)) {
         this.log(`Match executor received ${formatEther(totalBalanceDiff.toString())} ETH/WETH`);
         return {
