@@ -714,108 +714,103 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     }>
   > {
     if (!config.env.isForkingEnabled) {
-      const matchExecutor = this._matchExecutor.address;
-      const weth = Common.Addresses.Weth[parseInt(this._chainId, 10)];
+      try {
+        const matchExecutor = this._matchExecutor.address;
+        const weth = Common.Addresses.Weth[parseInt(this._chainId, 10)];
 
-      const maxGasUsage = 30_000_000;
-      const gasUsageTrace = await getCallTrace(
-        {
-          from: txData.from,
-          to: txData.to,
-          data: txData.data,
-          value: '0',
-          gas: maxGasUsage,
-          gasPrice: '0'
-        },
-        this._rpcProvider,
-        {
-          skipReverts: true
-        }
-      );
-
-      const gasUsed =
-        'gasUsed' in gasUsageTrace && typeof gasUsageTrace.gasUsed === 'string'
-          ? BigNumber.from(gasUsageTrace?.gasUsed).toString()
-          : maxGasUsage.toString();
-
-      const oneEth = BigNumber.from(10).pow(18);
-      const gasCost = BigNumber.from(gasUsed).mul(txData.maxFeePerGas);
-      const trace = await getCallTrace(
-        {
-          from: txData.from,
-          to: txData.to,
-          data: txData.data,
-          value: '0',
-          gas: maxGasUsage,
-          gasPrice: txData.maxFeePerGas,
-          balanceOverrides: {
-            [matchExecutor]: gasCost.add(oneEth)
+        const maxGasUsage = 30_000_000;
+        const oneEth = BigNumber.from(10).pow(18);
+        const gasCost = BigNumber.from(maxGasUsage).mul(txData.maxFeePerGas);
+        const trace = await getCallTrace(
+          {
+            from: txData.from,
+            to: txData.to,
+            data: txData.data,
+            value: '0',
+            gas: maxGasUsage,
+            gasPrice: txData.maxFeePerGas,
+            balanceOverrides: {
+              [txData.from]: gasCost.add(oneEth)
+            }
+          },
+          this._rpcProvider,
+          {
+            skipReverts: true
           }
-        },
-        this._rpcProvider,
-        {
-          skipReverts: true
-        }
-      );
+        );
 
-      if ('error' in trace && trace.error) {
-        if ('revertReason' in trace && trace.revertReason === 'Transaction not non-negative') {
-          this.error(`Transaction not non-negative ${JSON.stringify(trace, null, 2)}`);
+        if ('error' in trace && trace.error) {
+          if ('revertReason' in trace && trace.revertReason === 'Transaction not non-negative') {
+            this.error(`Transaction not non-negative ${JSON.stringify(trace, null, 2)}`);
+            return {
+              isValid: false,
+              reason: 'transaction reverted',
+              isTransient: false
+            };
+          }
+          const error = trace.error;
+          console.log(JSON.stringify(trace, null, 2));
+          this.error(`Error while simulating balance changes ${error}`);
+          try {
+            await this._rpcProvider.estimateGas({
+              ...txData
+            });
+          } catch (err) {
+            this.warn(`Failed to simulate balance changes: ${(error as unknown as { reason: string }).reason}`);
+          }
           return {
             isValid: false,
             reason: 'transaction reverted',
             isTransient: false
           };
         }
-        const error = trace.error;
-        console.log(JSON.stringify(trace, null, 2));
-        this.error(`Error while simulating balance changes ${error}`);
-        try {
-          await this._rpcProvider.estimateGas({
-            ...txData
-          });
-        } catch (err) {
-          this.warn(`Failed to simulate balance changes: ${(error as unknown as { reason: string }).reason}`);
+
+        const finalState = parseCallTrace(trace);
+
+        const ethBalanceDiff = BigNumber.from(
+          finalState[matchExecutor]?.tokenBalanceState?.['native:0x0000000000000000000000000000000000000000'] ?? '0'
+        );
+        const wethBalanceDiff = BigNumber.from(finalState[matchExecutor]?.tokenBalanceState?.[`erc20:${weth}`] ?? '0');
+        const totalBalanceDiff = ethBalanceDiff.add(wethBalanceDiff);
+        const gasUsed =
+          'gasUsed' in trace && typeof trace.gasUsed === 'string'
+            ? BigNumber.from(trace?.gasUsed).toString()
+            : maxGasUsage.toString();
+
+        const estimatedMaxGasCost = BigNumber.from(gasUsed).mul(txData.maxFeePerGas);
+        this.log(`Estimated max gas cost: ${formatEther(estimatedMaxGasCost.toString())} ETH`);
+
+        if (totalBalanceDiff.gte(0)) {
+          this.log(`Match executor received ${formatEther(totalBalanceDiff.toString())} ETH/WETH`);
+          return {
+            data: {
+              gasUsage: gasUsed,
+              totalBalanceDiff: totalBalanceDiff.toString(),
+              ethBalanceDiff: ethBalanceDiff.toString(),
+              wethBalanceDiff: wethBalanceDiff.toString()
+            },
+            isValid: true
+          };
         }
+
+        this.warn(
+          `Match executor lost ${formatEther(totalBalanceDiff.mul(-1).toString())} ETH/WETH. Tx ${JSON.stringify(
+            txData
+          )}`
+        );
+        return {
+          isValid: false,
+          reason: 'Match executor lost ETH/WETH',
+          isTransient: true
+        };
+      } catch (err) {
+        this.warn(`Error while simulating balance changes ${err}`);
         return {
           isValid: false,
           reason: 'transaction reverted',
-          isTransient: false
+          isTransient: true
         };
       }
-
-      const finalState = parseCallTrace(trace);
-
-      const ethBalanceDiff = BigNumber.from(
-        finalState[matchExecutor]?.tokenBalanceState?.['native:0x0000000000000000000000000000000000000000'] ?? '0'
-      );
-      const wethBalanceDiff = BigNumber.from(finalState[matchExecutor]?.tokenBalanceState?.[`erc20:${weth}`] ?? '0');
-      const totalBalanceDiff = ethBalanceDiff.add(wethBalanceDiff);
-
-      const estimatedMaxGasCost = BigNumber.from(gasUsed).mul(txData.maxFeePerGas);
-      this.log(`Estimated max gas cost: ${formatEther(estimatedMaxGasCost.toString())} ETH`);
-
-      if (totalBalanceDiff.gte(0)) {
-        this.log(`Match executor received ${formatEther(totalBalanceDiff.toString())} ETH/WETH`);
-        return {
-          data: {
-            gasUsage: gasUsed,
-            totalBalanceDiff: totalBalanceDiff.toString(),
-            ethBalanceDiff: ethBalanceDiff.toString(),
-            wethBalanceDiff: wethBalanceDiff.toString()
-          },
-          isValid: true
-        };
-      }
-
-      this.warn(
-        `Match executor lost ${formatEther(totalBalanceDiff.mul(-1).toString())} ETH/WETH. Tx ${JSON.stringify(txData)}`
-      );
-      return {
-        isValid: false,
-        reason: 'Match executor lost ETH/WETH',
-        isTransient: true
-      };
     }
 
     return {
@@ -872,11 +867,6 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
     }
 
     const initialState = await this._loadInitialState([...nonNativeTransfers, ...nativeTransfers], currentBlock.number);
-
-    // console.log(`Initial state: ${JSON.stringify(initialState, null, 2)}`);
-
-    // console.log(`Transfers`);
-    // console.log(JSON.stringify([...nonNativeTransfers, ...nativeTransfers], null, 2));
     return this._simulate(initialState, results);
   }
 
