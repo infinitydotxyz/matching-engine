@@ -135,6 +135,7 @@ export const config = {
   env: {
     mode,
     chainId: chainId,
+    chainName: getChainName(),
     debug: Number(getEnvVariable('DEBUG', false)) === 1,
     isForkingEnabled
   },

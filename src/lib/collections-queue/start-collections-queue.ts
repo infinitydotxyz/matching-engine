@@ -1,7 +1,7 @@
 import { MetricsTime, Queue, Worker } from 'bullmq';
 
-import { redis } from '@/common/db';
 import { logger } from '@/common/logger';
+import { redis } from '@/common/redis';
 import { config } from '@/config';
 
 export interface JobData {

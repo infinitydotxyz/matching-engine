@@ -8,7 +8,7 @@ import { ChainId } from '@infinityxyz/lib/types/core';
 import { ONE_MIN, sleep } from '@infinityxyz/lib/utils';
 
 import { Block } from '@/common/block';
-import { redlock } from '@/common/db';
+import { redlock } from '@/common/redis';
 import { config } from '@/config';
 import { AbstractProcess } from '@/lib/process/process.abstract';
 import { ProcessOptions } from '@/lib/process/types';

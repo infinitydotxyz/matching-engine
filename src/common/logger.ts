@@ -28,6 +28,13 @@ export const logger = {
   warn: log('warn')
 };
 
+export const getComponentLogger = (component: string) => ({
+  log: (message: string) => logger.log(component, message),
+  error: (message: string) => logger.error(component, message),
+  info: (message: string) => logger.info(component, message),
+  warn: (message: string) => logger.warn(component, message)
+});
+
 process.on('unhandledRejection', (error) => {
   logger.error('process', `Unhandled rejection: ${error}`);
 });

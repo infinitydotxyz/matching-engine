@@ -1,7 +1,8 @@
 import { ChainId } from '@infinityxyz/lib/types/core';
 import { getOBComplicationAddress } from '@infinityxyz/lib/utils';
 
-import { firestore, redis, redlock } from '@/common/db';
+import { firestore } from '@/common/firestore';
+import { redis, redlock } from '@/common/redis';
 import { OrderbookV1 } from '@/lib/orderbook';
 
 import { MatchingEngine } from '.';

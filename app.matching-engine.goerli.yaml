@@ -4,10 +4,10 @@ env: flex
 entrypoint: npm run start
 automatic_scaling:
   min_num_instances: 1
-  max_num_instances: 5
+  max_num_instances: 1
   cool_down_period_sec: 180
   cpu_utilization:
-    target_utilization: 0.5
+    target_utilization: 0.7
 resources:
   cpu: 4
   memory_gb: 6

@@ -4,8 +4,8 @@ import PQueue from 'p-queue';
 
 import { ExecutionStatusMatchedExecuted } from '@infinityxyz/lib/types/core';
 
-import { redis } from '@/common/db';
 import { logger } from '@/common/logger';
+import { redis } from '@/common/redis';
 import { config } from '@/config';
 import { getOrderbook, getProcesses, startCollection } from '@/lib/collections-queue/start-collection';
 import { MatchingEngine } from '@/lib/matching-engine/v1';

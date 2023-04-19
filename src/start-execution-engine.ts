@@ -1,7 +1,9 @@
 import { MetricsTime } from 'bullmq';
 
-import { firestore, redis, redlock } from './common/db';
+import { firestore } from '@/common/firestore';
+
 import { logger } from './common/logger';
+import { redis, redlock } from './common/redis';
 import { config, getNetworkConfig } from './config';
 import { validateNetworkConfig } from './config/validate-network';
 import { BlockScheduler } from './lib/block-scheduler';

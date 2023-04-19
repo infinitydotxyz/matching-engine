@@ -14,12 +14,19 @@ const chainName = getChainName(chainId);
 const projectId = process.env.PROJECT_ID ?? '';
 const region = 'us-east1';
 
+const args = process.argv.slice(2);
+const version = args.find((item) => item.toLowerCase().startsWith('version='))?.split?.('=')?.[1] ?? null;
+
+if (!version) {
+  throw new Error('version flag is required (npm run <script> -- version=1)');
+}
+
 void deployRedis({
   chainId,
   chainName,
   region,
   projectId,
-  version: '1',
+  version,
   memorySizeGb: chainId === ChainId.Mainnet ? 40 : 2,
   replicaCount: 1
 });

@@ -1,6 +1,6 @@
 import { sleep } from '@infinityxyz/lib/utils';
 
-import { firestore } from '../../common/db';
+import { firestore } from '@/common/firestore';
 
 const MAX_BATCH_SIZE = 300;
 

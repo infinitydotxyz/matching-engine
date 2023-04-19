@@ -2,8 +2,10 @@ import { MetricsTime, Worker } from 'bullmq';
 
 import { getOBComplicationAddress } from '@infinityxyz/lib/utils';
 
-import { firestore, redis, redlock, storage } from '../../common/db';
+import { firestore, storage } from '@/common/firestore';
+
 import { logger } from '../../common/logger';
+import { redis, redlock } from '../../common/redis';
 import { config } from '../../config';
 import { MatchingEngine } from '../matching-engine/v1';
 import { OrderRelay } from '../order-relay/v1/order-relay';
