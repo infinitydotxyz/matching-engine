@@ -144,6 +144,23 @@ export default async function register(fastify: FastifyInstance) {
 
       return { status: 'ok' };
     });
+
+    fastify.put(`${base}/collection/:collection/reset-stats`, async (request) => {
+      const { orderbookStorage } = getOrderbook();
+      const _collection =
+        typeof request.params == 'object' &&
+        request.params &&
+        'collection' in request.params &&
+        typeof request.params.collection === 'string'
+          ? request.params.collection
+          : '';
+      if (!ethers.utils.isAddress(_collection)) {
+        throw new Error('Invalid collection address');
+      }
+      const collection = _collection.toLowerCase();
+
+      await orderbookStorage.executionStorage.resetStats(collection, true);
+    });
   }
 
   fastify.get(`${base}/order/:order`, async (request) => {

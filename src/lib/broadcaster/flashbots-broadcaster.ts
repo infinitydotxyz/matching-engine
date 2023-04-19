@@ -61,17 +61,23 @@ export class FlashbotsBroadcaster extends Broadcaster<Options> {
 
       if ('error' in simulationResult) {
         // debug call
-        const result = await getCallTrace(
-          {
-            ...fbTxn,
-            from: await options.signer.getAddress()
-          },
-          this._provider
-        );
-
-        console.error('Flashbots simulation failed');
-        console.log(JSON.stringify(result, null, 2));
-
+        try {
+          logger.error(
+            'flashbots-broadcaster',
+            `Flashbots simulation failed: ${simulationResult.error.message} Attempting to get call trace`
+          );
+          console.log(JSON.stringify(fbTxn, null, 2));
+          const result = await getCallTrace(
+            {
+              ...fbTxn,
+              from: await options.signer.getAddress()
+            },
+            this._provider
+          );
+          console.log(JSON.stringify(result, null, 2));
+        } catch (err) {
+          console.error('Failed to get call trace');
+        }
         throw new Error(simulationResult.error.message);
       }
       const totalGasUsed = simulationResult.totalGasUsed;

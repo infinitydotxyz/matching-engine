@@ -24,6 +24,7 @@
     "start:prod:mainnet:me": "npm run build && npx cross-env CHAIN_ID=1 INFINITY_NODE_ENV=prod IS_DEPLOYED=1 node -r dotenv/config -r module-alias/register ./dist/scripts/start-matching-engine.js",
     "start:prod:goerli:ee": "npm run build && npx cross-env CHAIN_ID=5 INFINITY_NODE_ENV=prod IS_DEPLOYED=1 node -r dotenv/config -r module-alias/register ./dist/scripts/start-execution-engine.js",
     "start:prod:mainnet:ee": "npm run build && npx cross-env CHAIN_ID=1 INFINITY_NODE_ENV=prod IS_DEPLOYED=1 node -r dotenv/config -r module-alias/register ./dist/scripts/start-execution-engine.js",
+    "reset-stats:prod:mainnet": "npm run build && npx cross-env CHAIN_ID=1 INFINITY_NODE_ENV=prod IS_DEPLOYED=1 node -r dotenv/config -r module-alias/register ./dist/scripts/reset-stats.js",
     "update:lib": "npm install @infinityxyz/lib@latest",
     "pre:push": "npm run format && npm run lint && npm run build",
     "test": "jest",

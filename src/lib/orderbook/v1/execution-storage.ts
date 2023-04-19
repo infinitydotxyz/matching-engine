@@ -223,6 +223,34 @@ export class ExecutionStorage {
     };
   }
 
+  async resetStats(collection: string, global?: boolean) {
+    await this.resetAverageMatchDuration(collection, global);
+    await this.resetAverageExecutionDuration(collection, global);
+  }
+
+  async resetAverageMatchDuration(collection: string, global?: boolean) {
+    const collectionMatchDurationListKey = this.getCollectionMatchDurationsKey(collection);
+    const collectionAverageMatchDurationKey = this.getCollectionAverageMatchDurationKey(collection);
+    const globalMatchDurationListKey = this.getGlobalMatchDurationsKey();
+    const globalAverageMatchDurationKey = this.getGlobalAverageMatchDurationsKey();
+
+    if (global) {
+      await this._db.del(globalMatchDurationListKey, globalAverageMatchDurationKey);
+    }
+    await this._db.del(collectionMatchDurationListKey, collectionAverageMatchDurationKey);
+  }
+
+  async resetAverageExecutionDuration(collection: string, global?: boolean) {
+    const collectionExecutionDurationListKey = this.getCollectionExecutionDurationsKey(collection);
+    const collectionAverageExecutionDurationKey = this.getCollectionAverageExecutionDurationsKey(collection);
+    const globalExecutionDurationListKey = this.getGlobalExecutionDurationsKey();
+    const globalAverageExecutionDurationKey = this.getGlobalAverageExecutionDurationsKey();
+    if (global) {
+      await this._db.del(globalExecutionDurationListKey, globalAverageExecutionDurationKey);
+    }
+    await this._db.del(collectionExecutionDurationListKey, collectionAverageExecutionDurationKey);
+  }
+
   async getAverageExecutionDuration(collection: string) {
     const collectionExecutionDurationListKey = this.getCollectionExecutionDurationsKey(collection);
     const collectionAverageExecutionDurationKey = this.getCollectionAverageExecutionDurationsKey(collection);

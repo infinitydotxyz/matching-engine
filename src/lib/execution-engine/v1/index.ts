@@ -718,8 +718,28 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       const weth = Common.Addresses.Weth[parseInt(this._chainId, 10)];
 
       const maxGasUsage = 30_000_000;
+      const gasUsageTrace = await getCallTrace(
+        {
+          from: txData.from,
+          to: txData.to,
+          data: txData.data,
+          value: '0',
+          gas: maxGasUsage,
+          gasPrice: '0'
+        },
+        this._rpcProvider,
+        {
+          skipReverts: true
+        }
+      );
+
+      const gasUsed =
+        'gasUsed' in gasUsageTrace && typeof gasUsageTrace.gasUsed === 'string'
+          ? BigNumber.from(gasUsageTrace?.gasUsed).toString()
+          : maxGasUsage.toString();
+
       const oneEth = BigNumber.from(10).pow(18);
-      const gasCost = BigNumber.from(maxGasUsage).mul(txData.maxFeePerGas);
+      const gasCost = BigNumber.from(gasUsed).mul(txData.maxFeePerGas);
       const trace = await getCallTrace(
         {
           from: txData.from,
@@ -755,7 +775,7 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
             ...txData
           });
         } catch (err) {
-          this.warn(`Failed to simulate balance changes: ${(error as any).reason}`);
+          this.warn(`Failed to simulate balance changes: ${(error as unknown as { reason: string }).reason}`);
         }
         return {
           isValid: false,
@@ -771,10 +791,6 @@ export class ExecutionEngine<T> extends AbstractProcess<ExecutionEngineJob, Exec
       );
       const wethBalanceDiff = BigNumber.from(finalState[matchExecutor]?.tokenBalanceState?.[`erc20:${weth}`] ?? '0');
       const totalBalanceDiff = ethBalanceDiff.add(wethBalanceDiff);
-      const gasUsed =
-        'gasUsed' in trace && typeof trace.gasUsed === 'string'
-          ? BigNumber.from(trace?.gasUsed).toString()
-          : '30000000';
 
       const estimatedMaxGasCost = BigNumber.from(gasUsed).mul(txData.maxFeePerGas);
       this.log(`Estimated max gas cost: ${formatEther(estimatedMaxGasCost.toString())} ETH`);
