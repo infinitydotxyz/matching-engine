@@ -39,3 +39,52 @@
     * Mainnet matching engine: `gcloud app versions delete <GAE VERSION> --service=matching-engine-mainnet --project=nftc-infinity`
     * Mainnet execution engine: `gcloud app versions delete <GAE VERSION> --service=execution-engine-mainnet --project=nftc-infinity`
     * Redis: delete from console `gcloud redis instances delete <INSTANCE NAME> --region=us-east1 --project=nftc-infinity`
+
+
+## Env Variables
+* Supports `.env.<ENV>.<CHAIN_NAME>.<LOCATION>`
+    * ENV is based on the `INFINITY_NODE_ENV` env variable can be `prod` or `dev` 
+    * CHAIN_NAME is set based on the `CHAIN_ID` env variable and currently supports `mainnet` or `goerli`
+    * LOCATION is set based on the `IS_DEPLOYED` env variable and can be either `local` or `deploy`
+
+```
+# Enable or disable logging for queues
+DEBUG="1" 
+
+CHAIN_ID="1"
+
+# Whether the application is deployed (used to select an env file - typically only set in app.yaml files)
+IS_DEPLOYED="1"
+
+# Whether the application is running in "dev" or "prod" mode (used to select an env file)
+INFINITY_NODE_ENV=""
+
+WEBSOCKET_PROVIDER_URL=""
+HTTP_PROVIDER_URL=""
+
+REDIS_URL="IP:PORT"
+READ_REDIS_URL="IP:PORT"
+
+# Api key for api endpoints
+API_KEY=""
+
+# Match executor address
+MATCH_EXECUTOR_ADDRESS=""
+
+# Flow exchange address
+EXCHANGE_ADDRESS=""
+
+# Private key of the flashbots auth signer (should not contain funds)
+FLASHBOTS_AUTH_SIGNER_KEY=""
+
+# Private key of the initiator
+INITIATOR_KEY=""
+
+# OpenSea api key for requesting signatures
+OPENSEA_API_KEY=""
+
+# Enable specific components disable with "" or "0" enable with "1"
+EXECUTION_ENGINE=""
+MATCHING_ENGINE=""
+API_READONLY=""
+```
