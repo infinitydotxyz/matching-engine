@@ -40,6 +40,20 @@ export const safeWebSocketSubscription = (
     if (pingTimeout) {
       clearTimeout(pingTimeout);
     }
+    try {
+      webSocketProvider.removeAllListeners();
+      webSocketProvider
+        .destroy()
+        .then(() => {
+          logger.error('websocket-provider', `WebSocket destroyed`);
+        })
+        .catch((err) => {
+          logger.error('websocket-provider', `WebSocket destroy failed: ${err}`);
+        });
+    } catch (err) {
+      logger.error('websocket-provider', `WebSocket closing failed: ${err}`);
+    }
+    logger.error('websocket-provider', `WebSocket subscription closed. Reconnecting...`);
     safeWebSocketSubscription(providerUrl, callback);
   });
 
