@@ -121,6 +121,8 @@ export class BlockScheduler extends AbstractProcess<JobData, JobResult> {
         safeWebSocketSubscription(this._wsProvider.connection.url, async (provider) => {
           provider.on('block', callback);
           await Promise.resolve();
+        }).catch((err) => {
+          this.error(`Unexpected error! Safe WebSocket Subscription Failed. ${err}`);
         });
 
         /**
