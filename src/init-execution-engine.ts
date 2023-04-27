@@ -63,7 +63,7 @@ export const getExecutionEngine = async () => {
   };
 };
 
-export const startExecutionEngine = async () => {
+export const initExecutionEngine = async () => {
   const { executionEngine, network } = await getExecutionEngine();
   const blockScheduler = new BlockScheduler(
     redis,

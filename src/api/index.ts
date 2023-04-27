@@ -1,6 +1,9 @@
 import Fastify, { FastifyInstance, FastifyPluginOptions } from 'fastify';
+import { startExecutionEngine } from 'scripts/start-execution-engine';
+import { startMatchingEngine } from 'scripts/start-matching-engine';
 
 import cors from '@fastify/cors';
+import { sleep } from '@infinityxyz/lib/utils';
 
 import { config } from '@/config';
 
@@ -50,6 +53,17 @@ const start = async () => {
   await register();
   try {
     await fastify.listen({ port: config.components.api.port, host: '0.0.0.0' });
+
+    if (!config.components.api.readonly && config.env.isDeployed) {
+      if (config.components.executionEngine.enabled) {
+        await sleep(5000);
+        await startExecutionEngine(config.env.version);
+      }
+      if (config.components.matchingEngine.enabled) {
+        await sleep(5000);
+        await startMatchingEngine(config.env.version);
+      }
+    }
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);

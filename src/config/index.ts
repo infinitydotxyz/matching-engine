@@ -137,7 +137,9 @@ export const config = {
     chainId: chainId,
     chainName: getChainName(),
     debug: Number(getEnvVariable('DEBUG', false)) === 1,
-    isForkingEnabled
+    isForkingEnabled,
+    isDeployed,
+    version: getEnvVariable('GAE_VERSION', false) || ''
   },
   components: {
     matchingEngine: {

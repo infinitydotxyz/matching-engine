@@ -1,9 +1,14 @@
+import { startExecutionEngine } from 'scripts/start-execution-engine';
+import { startMatchingEngine } from 'scripts/start-matching-engine';
+
+import { sleep } from '@infinityxyz/lib/utils';
+
 import { config, getNetworkConfig } from '@/config';
 import { getProcesses } from '@/lib/collections-queue/start-collection';
 
 import { logger } from './common/logger';
 import { validateNetworkConfig } from './config/validate-network';
-import { startExecutionEngine } from './start-execution-engine';
+import { initExecutionEngine } from './init-execution-engine';
 
 async function main() {
   const network = await validateNetworkConfig(getNetworkConfig(config.env.chainId));
@@ -27,11 +32,20 @@ async function main() {
     logger.info('process', 'Starting matching engine');
     const matchingEnginePromise = matchingEngine.run();
     promises.push(matchingEnginePromise);
+
+    if (config.env.isDeployed) {
+      promises.push(sleep(5000).then(() => startMatchingEngine(config.env.version)));
+    }
   }
 
   if (config.components.executionEngine.enabled) {
     logger.info('process', 'Starting execution engine');
-    promises.push(startExecutionEngine());
+    const initExecutionEnginePromise = initExecutionEngine();
+    promises.push(initExecutionEnginePromise);
+
+    if (config.env.isDeployed) {
+      promises.push(sleep(5000).then(() => startExecutionEngine(config.env.version)));
+    }
   }
 
   await Promise.all(promises);

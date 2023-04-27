@@ -6,12 +6,11 @@ import { sleep } from '@infinityxyz/lib/utils';
 import { firestore } from '@/common/firestore';
 import { getComponentLogger } from '@/common/logger';
 import { config } from '@/config';
+import { expBackoff } from '@/lib/utils/exp-backoff';
 import { SupportedCollectionsProvider } from '@/lib/utils/supported-collections-provider';
 
-async function main() {
+export async function startMatchingEngine(version?: string | null) {
   const startTime = Date.now();
-  const args = process.argv.slice(2);
-  const version = args.find((item) => item.toLowerCase().startsWith('version='))?.split?.('=')?.[1] ?? null;
   const chainName = config.env.chainName;
 
   const baseUrl = version
@@ -78,25 +77,42 @@ async function main() {
       .add(async () => {
         const url = `${baseUrl}matching/collection/${address}`;
         logger.info(`Starting collection: ${address}`);
-        try {
-          const response = await phin({
-            url,
-            method: 'PUT',
-            headers: {
-              'x-api-key': config.components.api.apiKey
-            }
-          });
+        const MAX_ATTEMPTS = 10;
+        const backoffGenerator = expBackoff(MAX_ATTEMPTS, 2000);
+        for (;;) {
+          try {
+            const response = await phin({
+              url,
+              method: 'PUT',
+              headers: {
+                'x-api-key': config.components.api.apiKey
+              }
+            });
 
-          if (response.statusCode === 200) {
-            await sleep(5000);
-            await waitForSyncCompletion(baseUrl, address);
-            logger.info(`Started collection: ${address}`);
-          } else {
-            throw new Error(`Failed to start collection. Invalid status code ${response.statusCode}`);
+            if (response.statusCode === 200) {
+              await sleep(5000);
+              await waitForSyncCompletion(baseUrl, address);
+              logger.info(`Started collection: ${address}`);
+              return;
+            } else if (response.statusCode && response.statusCode >= 500) {
+              throw Error(
+                `Failed to start collection. Status Code ${response.statusCode} - Server might not be ready for traffic. ${address} - ${url}`
+              );
+            } else {
+              throw new Error(`Failed to start collection. Invalid status code ${response.statusCode}`);
+            }
+          } catch (err) {
+            const backoff = backoffGenerator.next();
+            if (backoff.done) {
+              logger.error(`Failed to start collection ${address} - ${err}`);
+              throw err;
+            }
+            const { attempts, maxAttempts, delay } = backoff.value;
+            logger.info(
+              `Failed to start collection ${address}. Attempt ${attempts} of ${maxAttempts} - Retrying in ${delay}ms`
+            );
+            await sleep(delay);
           }
-        } catch (err) {
-          logger.error(`Error starting collection: ${address} - ${url} ${err}`);
-          throw err;
         }
       })
       .catch((err) => {
@@ -107,8 +123,4 @@ async function main() {
   await queue.onIdle();
 
   logger.info(`Started ${collections.length} collections in ${Date.now() - startTime}ms`);
-
-  process.exit(1);
 }
-
-void main();

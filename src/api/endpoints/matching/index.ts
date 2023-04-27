@@ -12,7 +12,7 @@ import { MatchingEngine } from '@/lib/matching-engine/v1';
 import { OrderRelay } from '@/lib/order-relay/v1/order-relay';
 import { Order } from '@/lib/orderbook/v1';
 
-import { getExecutionEngine } from '../../../start-execution-engine';
+import { getExecutionEngine } from '../../../init-execution-engine';
 
 const base = '/matching';
 

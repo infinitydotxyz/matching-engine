@@ -1,11 +1,12 @@
 import phin from 'phin';
 
+import { sleep } from '@infinityxyz/lib/utils';
+
 import { getComponentLogger } from '@/common/logger';
 import { config } from '@/config';
+import { expBackoff } from '@/lib/utils/exp-backoff';
 
-async function main() {
-  const args = process.argv.slice(2);
-  const version = args.find((item) => item.toLowerCase().startsWith('version='))?.split?.('=')?.[1] ?? null;
+export async function startExecutionEngine(version?: string | null) {
   const chainName = config.env.chainName;
 
   const baseUrl = version
@@ -15,25 +16,32 @@ async function main() {
   const logger = getComponentLogger('start-execution-engine');
 
   logger.info(`Starting execution engine for chain ${config.env.chainName}... ${baseUrl}`);
-  try {
-    const url = `${baseUrl}execution`;
-    const response = await phin({
-      url,
-      method: 'PUT',
-      headers: {
-        'x-api-key': config.components.api.apiKey
+  const backoffGenerator = expBackoff(10, 2000);
+  for (;;) {
+    try {
+      const url = `${baseUrl}execution`;
+      const response = await phin({
+        url,
+        method: 'PUT',
+        headers: {
+          'x-api-key': config.components.api.apiKey
+        }
+      });
+      if (response.statusCode === 200) {
+        logger.info(`Started execution engine`);
+        return;
+      } else {
+        throw new Error(`Failed to start execution engine. Invalid status code ${response.statusCode}`);
       }
-    });
-    if (response.statusCode === 200) {
-      logger.info(`Started execution engine`);
-    } else {
-      throw new Error(`Failed to start execution engine. Invalid status code ${response.statusCode}`);
+    } catch (err) {
+      const backoff = backoffGenerator.next();
+      if (backoff.done) {
+        logger.error(`Failed to start execution engine - ${err}`);
+        throw err;
+      }
+      const { attempts, maxAttempts, delay } = backoff.value;
+      logger.info(`Failed to start execution engine. Attempt ${attempts} of ${maxAttempts} - Retrying in ${delay}ms`);
+      await sleep(delay);
     }
-  } catch (err) {
-    logger.error(`Error starting execution engine - ${err}`);
-    throw err;
   }
-  process.exit(1);
 }
-
-void main();
