@@ -78,7 +78,7 @@ export async function startMatchingEngine(version?: string | null) {
         const url = `${baseUrl}matching/collection/${address}`;
         logger.info(`Starting collection: ${address}`);
         const MAX_ATTEMPTS = 10;
-        const backoffGenerator = expBackoff(MAX_ATTEMPTS, 2000);
+        const backoffGenerator = expBackoff(MAX_ATTEMPTS, 2);
         for (;;) {
           try {
             const response = await phin({

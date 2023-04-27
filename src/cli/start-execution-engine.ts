@@ -1,4 +1,6 @@
-import { startExecutionEngine } from 'scripts/start-execution-engine';
+import 'module-alias/register';
+
+import { startExecutionEngine } from '@/scripts/start-execution-engine';
 
 async function main() {
   const args = process.argv.slice(2);

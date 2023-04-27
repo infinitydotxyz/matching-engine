@@ -1,5 +1,6 @@
-export function* expBackoff(maxAttempts: number, initialDelay: number) {
+export function* expBackoff(maxAttempts: number, initialDelaySeconds: number) {
   for (let attempts = 0; attempts < maxAttempts; attempts += 1) {
-    yield { attempts, delay: initialDelay ** attempts, maxAttempts };
+    const delay = initialDelaySeconds ** attempts * 1000;
+    yield { attempts, delay: delay, maxAttempts };
   }
 }

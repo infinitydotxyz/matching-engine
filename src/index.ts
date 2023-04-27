@@ -1,10 +1,9 @@
-import { startExecutionEngine } from 'scripts/start-execution-engine';
-import { startMatchingEngine } from 'scripts/start-matching-engine';
-
 import { sleep } from '@infinityxyz/lib/utils';
 
 import { config, getNetworkConfig } from '@/config';
 import { getProcesses } from '@/lib/collections-queue/start-collection';
+import { startExecutionEngine } from '@/scripts/start-execution-engine';
+import { startMatchingEngine } from '@/scripts/start-matching-engine';
 
 import { logger } from './common/logger';
 import { validateNetworkConfig } from './config/validate-network';

@@ -16,7 +16,7 @@ export async function startExecutionEngine(version?: string | null) {
   const logger = getComponentLogger('start-execution-engine');
 
   logger.info(`Starting execution engine for chain ${config.env.chainName}... ${baseUrl}`);
-  const backoffGenerator = expBackoff(10, 2000);
+  const backoffGenerator = expBackoff(10, 2);
   for (;;) {
     try {
       const url = `${baseUrl}execution`;

@@ -1,11 +1,12 @@
 import Fastify, { FastifyInstance, FastifyPluginOptions } from 'fastify';
-import { startExecutionEngine } from 'scripts/start-execution-engine';
-import { startMatchingEngine } from 'scripts/start-matching-engine';
 
 import cors from '@fastify/cors';
 import { sleep } from '@infinityxyz/lib/utils';
 
+import { getComponentLogger } from '@/common/logger';
 import { config } from '@/config';
+import { startExecutionEngine } from '@/scripts/start-execution-engine';
+import { startMatchingEngine } from '@/scripts/start-matching-engine';
 
 import blocks from './endpoints/blocks';
 import executionEngine from './endpoints/execution';
@@ -13,6 +14,8 @@ import matchingEngine from './endpoints/matching';
 import orders from './endpoints/orders';
 
 Error.stackTraceLimit = Infinity;
+
+const logger = getComponentLogger('api');
 
 const fastify = Fastify({
   jsonShorthand: false,
@@ -52,17 +55,45 @@ const register = async () => {
 const start = async () => {
   await register();
   try {
-    await fastify.listen({ port: config.components.api.port, host: '0.0.0.0' });
-
     if (!config.components.api.readonly && config.env.isDeployed) {
       if (config.components.executionEngine.enabled) {
-        await sleep(5000);
-        await startExecutionEngine(config.env.version);
+        new Promise<void>((resolve, reject) => {
+          logger.log(`Starting execution engine...`);
+          sleep(5000)
+            .then(() => {
+              return startExecutionEngine(config.env.version);
+            })
+            .then(() => {
+              resolve();
+            })
+            .catch((err) => {
+              reject(err);
+            });
+        }).catch((err) => {
+          logger.error(`${err}`);
+        });
       }
       if (config.components.matchingEngine.enabled) {
-        await sleep(5000);
-        await startMatchingEngine(config.env.version);
+        new Promise<void>((resolve, reject) => {
+          logger.log(`Starting matching engine...`);
+          sleep(5000)
+            .then(() => {
+              return startMatchingEngine(config.env.version);
+            })
+            .then(() => {
+              resolve();
+            })
+            .catch((err) => {
+              reject(err);
+            });
+        }).catch((err) => {
+          logger.error(`${err}`);
+        });
       }
+      logger.log(`API listening on ${config.components.api.port}`);
+      await fastify.listen({ port: config.components.api.port, host: '0.0.0.0' });
+    } else {
+      logger.log(`App is readonly or is not deployed, skipping auto-start`);
     }
   } catch (err) {
     fastify.log.error(err);

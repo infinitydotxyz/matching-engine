@@ -1,4 +1,6 @@
-import { startMatchingEngine } from '../scripts/start-matching-engine';
+import 'module-alias/register';
+
+import { startMatchingEngine } from '@/scripts/start-matching-engine';
 
 async function main() {
   const args = process.argv.slice(2);

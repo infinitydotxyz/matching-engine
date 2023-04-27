@@ -18,9 +18,9 @@
     "baseUrl": "src",
     "paths": {
       "@/config": ["config/index.ts"],
-      "@/config/*": ["config/*"],
       "@/common/*": ["common/*"],
-      "@/lib/*": ["lib/*"]
+      "@/lib/*": ["lib/*"],
+      "@/scripts/*": ["scripts/*"]
     }
   },
   "include": ["src/**/*.ts"],
