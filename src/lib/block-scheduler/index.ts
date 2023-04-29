@@ -116,11 +116,29 @@ export class BlockScheduler extends AbstractProcess<JobData, JobResult> {
         const callback = handler(signal);
         /**
          * use web sockets to attempt to get block numbers
-         * right await
+         * right away
          */
         safeWebSocketSubscription(this._wsProvider.connection.url, async (provider) => {
           provider.on('block', callback);
-          await Promise.resolve();
+
+          return new Promise((resolve) => {
+            // in the case that the signal is aborted, unsubscribe from block events
+            const abortHandler = () => {
+              this.log(`Received abort signal, unsubscribed from block events`);
+              provider.off('block', callback);
+              signal.removeEventListener('abort', abortHandler);
+              resolve();
+            };
+            signal.addEventListener('abort', abortHandler);
+
+            // in the case that the provider is disconnected, resolve the promise and unsubscribe from signal events
+            const disconnectHandler = () => {
+              this.log(`Provider disconnected, unsubscribed from block events`);
+              signal.removeEventListener('abort', abortHandler);
+              resolve();
+            };
+            provider._websocket.on('close', disconnectHandler);
+          });
         }).catch((err) => {
           this.error(`Unexpected error! Safe WebSocket Subscription Failed. ${err}`);
         });
@@ -130,10 +148,10 @@ export class BlockScheduler extends AbstractProcess<JobData, JobResult> {
          */
         const iterator = this._blockIterator(3_000);
         for await (const { blockNumber } of iterator) {
-          await callback(blockNumber);
           if (signal.aborted) {
             return;
           }
+          await callback(blockNumber);
         }
       });
     } catch (err) {
