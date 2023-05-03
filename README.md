@@ -88,3 +88,11 @@ EXECUTION_ENGINE=""
 MATCHING_ENGINE=""
 API_READONLY=""
 ```
+
+
+## Supporting new marketplaces
+* Update lib
+* Update the reservoir sdk to the same version as the functions repo
+* Update the `NonNativeOrderFactory` to return an order for the marketplace you want to add `src/lib/match-executor/order/non-native-order-factory.ts`
+* Implement a `NonNativeOrder` for each order type you would like to support. Example `src/lib/match-executor/order/seaport`
+* Update the config to include the marketplace and order types you added support for `src/lib/match-executor/order/config.ts`
