@@ -2,7 +2,7 @@ import { BigNumber, ethers } from 'ethers';
 import phin from 'phin';
 
 import { ChainId, ChainNFTs } from '@infinityxyz/lib/types/core';
-import { Flow, SeaportBase, SeaportV11 } from '@reservoir0x/sdk';
+import { Flow, SeaportBase, SeaportV15 } from '@reservoir0x/sdk';
 
 import SeaportConduitControllerAbi from '@/common/abi/seaport-conduit-controller.json';
 import { logger } from '@/common/logger';
@@ -17,10 +17,10 @@ import { ErrorCode } from '../errors/error-code';
 import { OrderCurrencyError, OrderDynamicError, OrderError, OrderKindError } from '../errors/order-error';
 import { NonNativeOrder } from '../non-native-order';
 
-export abstract class SeaportOrder extends NonNativeOrder<SeaportBase.Types.OrderComponents> {
-  readonly source = 'seaport';
+export abstract class SeaportV15Order extends NonNativeOrder<SeaportBase.Types.OrderComponents> {
+  readonly source = 'seaport-v1.5';
 
-  protected _order: SeaportV11.Order;
+  protected _order: SeaportV15.Order;
 
   get gasUsage() {
     return this._orderData.gasUsage;
@@ -28,7 +28,7 @@ export abstract class SeaportOrder extends NonNativeOrder<SeaportBase.Types.Orde
 
   constructor(_orderData: OrderData, _chainId: ChainId, provider: ethers.providers.StaticJsonRpcProvider) {
     super(_orderData, _chainId, provider);
-    this._order = new SeaportV11.Order(this.chainId, this._sourceParams);
+    this._order = new SeaportV15.Order(this.chainId, this._sourceParams);
   }
 
   async prepareOrder(params: { taker: string }): Promise<ValidityResult> {
@@ -53,7 +53,7 @@ export abstract class SeaportOrder extends NonNativeOrder<SeaportBase.Types.Orde
     taker: string
   ): Promise<ValidityResultWithData<{ call: Call; nftsToTransfer: ChainNFTs[] }>> {
     try {
-      const exchange = new SeaportV11.Exchange(this.chainId);
+      const exchange = new SeaportV15.Exchange(this.chainId);
       const matchParams = this._order.buildMatching();
       if (!this._order.params.signature) {
         throw new Error(`order ${this._order.hash()} is not signed`);
@@ -83,6 +83,8 @@ export abstract class SeaportOrder extends NonNativeOrder<SeaportBase.Types.Orde
         reason: 'unexpected'
       };
     }
+
+    // return Promise.resolve({ call, nftsToTransfer: this._orderData.order.nfts });
   }
 
   /**
@@ -143,10 +145,10 @@ export abstract class SeaportOrder extends NonNativeOrder<SeaportBase.Types.Orde
      * order kind should be known
      */
     if (!this.kind) {
-      throw new OrderKindError(`${this.kind}`, 'seaport', 'unexpected');
+      throw new OrderKindError(`${this.kind}`, this.source, 'unexpected');
     }
 
-    const zones = [ethers.constants.AddressZero, SeaportV11.Addresses.PausableZone[this.chainId]];
+    const zones = [ethers.constants.AddressZero, SeaportV15.Addresses.OpenSeaProtectedOffersZone[this.chainId]];
     if (!zones.includes(this._sourceParams.zone)) {
       throw new OrderError('unknown zone', ErrorCode.SeaportZone, this._sourceParams.zone, this.source, 'unsupported');
     }
@@ -264,7 +266,7 @@ export abstract class SeaportOrder extends NonNativeOrder<SeaportBase.Types.Orde
     const conduitController = new ethers.Contract(conduit, SeaportConduitControllerAbi, this._provider);
 
     const makerConduit = BigNumber.from(this._sourceParams.conduitKey).eq(0)
-      ? SeaportV11.Addresses.Exchange[this.chainId]
+      ? SeaportV15.Addresses.Exchange[this.chainId]
       : await conduitController
           .getConduit(this._sourceParams.conduitKey)
           .then((result: { exists: boolean; conduit: string }) => {
@@ -293,7 +295,7 @@ export abstract class SeaportOrder extends NonNativeOrder<SeaportBase.Types.Orde
         operator: makerConduit,
         from: taker,
         to: this._sourceParams.offerer,
-        value: value.toString() // joe-todo: consider fees
+        value: value.toString() // TODO consider fees
       };
     } else {
       currencyTransfer = {
@@ -347,10 +349,11 @@ export abstract class SeaportOrder extends NonNativeOrder<SeaportBase.Types.Orde
     const endpoint = this.isSellOrder
       ? `${baseUrl}v2/listings/fulfillment_data`
       : `${baseUrl}v2/offers/fulfillment_data`;
+
     const order = {
       hash: this._order.hash(),
       chain: chain,
-      protocol_address: SeaportV11.Addresses.Exchange[this.chainId]
+      protocol_address: SeaportV15.Addresses.Exchange[this.chainId]
     };
 
     const orderBodyData = this.isSellOrder

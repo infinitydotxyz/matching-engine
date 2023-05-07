@@ -2,7 +2,7 @@ import { BigNumber, ethers } from 'ethers';
 import phin from 'phin';
 
 import { ChainId, ChainNFTs } from '@infinityxyz/lib/types/core';
-import { Flow, SeaportV14 } from '@reservoir0x/sdk';
+import { Flow, SeaportBase, SeaportV14 } from '@reservoir0x/sdk';
 
 import SeaportConduitControllerAbi from '@/common/abi/seaport-conduit-controller.json';
 import { logger } from '@/common/logger';
@@ -17,7 +17,7 @@ import { ErrorCode } from '../errors/error-code';
 import { OrderCurrencyError, OrderDynamicError, OrderError, OrderKindError } from '../errors/order-error';
 import { NonNativeOrder } from '../non-native-order';
 
-export abstract class SeaportV14Order extends NonNativeOrder<SeaportV14.Types.OrderComponents> {
+export abstract class SeaportV14Order extends NonNativeOrder<SeaportBase.Types.OrderComponents> {
   readonly source = 'seaport-v1.4';
 
   protected _order: SeaportV14.Order;
@@ -148,12 +148,12 @@ export abstract class SeaportV14Order extends NonNativeOrder<SeaportV14.Types.Or
       throw new OrderKindError(`${this.kind}`, this.source, 'unexpected');
     }
 
-    const zones = [ethers.constants.AddressZero, SeaportV14.Addresses.PausableZone[this.chainId]];
+    const zones = [ethers.constants.AddressZero, SeaportV14.Addresses.OpenSeaProtectedOffersZone[this.chainId]];
     if (!zones.includes(this._sourceParams.zone)) {
       throw new OrderError('unknown zone', ErrorCode.SeaportZone, this._sourceParams.zone, this.source, 'unsupported');
     }
 
-    if (this._sourceParams.conduitKey !== SeaportV14.Addresses.OpenseaConduitKey[this.chainId]) {
+    if (this._sourceParams.conduitKey !== SeaportBase.Addresses.OpenseaConduitKey[this.chainId]) {
       throw new OrderError(
         `invalid conduitKey`,
         ErrorCode.SeaportConduitKey,
@@ -168,7 +168,7 @@ export abstract class SeaportV14Order extends NonNativeOrder<SeaportV14.Types.Or
 
   public get isERC721(): boolean {
     const items = this.isSellOrder ? this._sourceParams.offer : this._sourceParams.consideration;
-    const erc721ItemTypes = new Set([SeaportV14.Types.ItemType.ERC721]); // don't include ERC721 with criteria
+    const erc721ItemTypes = new Set([SeaportBase.Types.ItemType.ERC721]); // don't include ERC721 with criteria
     return items.every((offerItem) => {
       return erc721ItemTypes.has(offerItem.itemType);
     });
@@ -212,7 +212,7 @@ export abstract class SeaportV14Order extends NonNativeOrder<SeaportV14.Types.Or
       if (item.startAmount !== item.endAmount) {
         throw new OrderDynamicError(this.source);
       }
-      if (item.itemType !== SeaportV14.Types.ItemType.ERC721) {
+      if (item.itemType !== SeaportBase.Types.ItemType.ERC721) {
         throw new OrderError('non-erc721 order', ErrorCode.OrderTokenStandard, `true`, this.source);
       }
 
@@ -262,7 +262,7 @@ export abstract class SeaportV14Order extends NonNativeOrder<SeaportV14.Types.Or
   }
 
   async getOperator() {
-    const conduit = SeaportV14.Addresses.ConduitController[this.chainId];
+    const conduit = SeaportBase.Addresses.ConduitController[this.chainId];
     const conduitController = new ethers.Contract(conduit, SeaportConduitControllerAbi, this._provider);
 
     const makerConduit = BigNumber.from(this._sourceParams.conduitKey).eq(0)

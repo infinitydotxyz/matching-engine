@@ -96,9 +96,19 @@ export const safeWebSocketSubscription = async (
   for (;;) {
     try {
       const { provider, providerValid } = await initiateSafeWebSocketSubscription(providerUrl);
-      await callback(provider);
       numConsecutiveFailures = 0;
-      await providerValid;
+      const safeCallback = new Promise<void>((resolve) => {
+        callback(provider)
+          .then(() => {
+            resolve();
+          })
+          .catch((err) => {
+            resolve();
+          });
+      });
+
+      await Promise.race([safeCallback, providerValid]);
+      provider._websocket.terminate();
     } catch (err) {
       numConsecutiveFailures += 1;
       logger.error('websocket-provider', `WebSocket subscription failed: ${err}`);

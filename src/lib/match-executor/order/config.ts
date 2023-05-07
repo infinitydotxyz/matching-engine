@@ -1,5 +1,6 @@
 import * as Seaport from './seaport';
 import * as SeaportV14 from './seaport-v1.4';
+import * as SeaportV15 from './seaport-v1.5';
 
 const seaportConfig = {
   'single-token': {
@@ -33,6 +34,22 @@ const seaportV14Config = {
   }
 };
 
+const seaportV15Config = {
+  'single-token': {
+    enabled: true,
+    order: SeaportV15.SingleTokenOrder
+  },
+  'bundle-ask': {
+    enabled: false
+  },
+  'contract-wide': {
+    enabled: false
+  },
+  'token-list': {
+    enabled: false
+  }
+};
+
 export const config = {
   seaport: {
     source: 'seaport',
@@ -43,6 +60,11 @@ export const config = {
     source: 'seaport-v1.4',
     enabled: true,
     kinds: seaportV14Config
+  },
+  'seaport-v1.5': {
+    source: 'seaport-v1.5',
+    enabled: true,
+    kinds: seaportV15Config
   },
   'wyvern-v2': {
     source: 'wyvern-v2',

@@ -2,7 +2,7 @@ import { ethers } from 'ethers';
 import { parseEther, parseUnits } from 'ethers/lib/utils';
 
 import { ChainId } from '@infinityxyz/lib/types/core';
-import { Common, Flow, Seaport } from '@reservoir0x/sdk';
+import { Common, Flow, SeaportBase, SeaportV11 } from '@reservoir0x/sdk';
 
 import { getProcesses, startCollection } from '@/lib/collections-queue/start-collection';
 import { JobData } from '@/lib/order-relay/v1/order-relay';
@@ -19,7 +19,7 @@ export async function createMatch(chainId: ChainId) {
   if (!('test' in network) || !network.test) {
     throw new Error('invalid network config');
   }
-  const seaportExchange = new Seaport.Exchange(chainIdInt);
+  const seaportExchange = new SeaportV11.Exchange(chainIdInt);
   const seller = network.test.erc721Owner;
   const txn = await network.test.erc721.approve(seller.connect(network.httpProvider), seaportExchange.contract.address);
 
@@ -32,9 +32,9 @@ export async function createMatch(chainId: ChainId) {
 
   for (let tokenId = 1; tokenId < 10; tokenId += 1) {
     try {
-      const seaportBuilder = new Seaport.Builders.SingleToken(chainIdInt);
+      const seaportBuilder = new SeaportBase.Builders.SingleToken(chainIdInt);
 
-      const seaportParams = {
+      const seaportParams: Parameters<typeof seaportBuilder.build>[0] = {
         side: 'sell',
         tokenKind: 'erc721',
         offerer: seller.address,
@@ -46,7 +46,7 @@ export async function createMatch(chainId: ChainId) {
         startTime: time,
         endTime: time + 3600
       };
-      const seaportSellOrder = seaportBuilder.build(seaportParams as Parameters<typeof seaportBuilder.build>[0]);
+      const seaportSellOrder = seaportBuilder.build(seaportParams, SeaportV11.Order);
       await seaportSellOrder.sign(seller);
 
       const orderBuilder = new Flow.Builders.SingleToken(chainIdInt);
@@ -61,8 +61,8 @@ export async function createMatch(chainId: ChainId) {
         maxGasPrice: gwei.mul(20).toString(),
         startPrice: seaportParams.price.toString(),
         endPrice: seaportParams.price.toString(),
-        startTime: seaportParams.startTime,
-        endTime: seaportParams.endTime,
+        startTime: seaportParams.startTime ?? time,
+        endTime: seaportParams.endTime ?? time + 3600,
         currency: Common.Addresses.Weth[chainId]
       });
 
