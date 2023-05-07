@@ -43,7 +43,7 @@
     "@fastify/cors": "^8.2.1",
     "@flashbots/ethers-provider-bundle": "^0.6.1",
     "@georgeroman/evm-tx-simulator": "^0.0.12",
-    "@infinityxyz/lib": "^1.340.1",
+    "@infinityxyz/lib": "^1.344.1",
     "@reservoir0x/sdk": "0.0.324",
     "async-mutex": "^0.4.0",
     "bullmq": "^3.4.1",
