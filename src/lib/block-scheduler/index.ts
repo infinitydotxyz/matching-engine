@@ -78,7 +78,7 @@ export class BlockScheduler extends AbstractProcess<JobData, JobResult> {
 
     let cancel: undefined | (() => void);
     const handler = (signal: AbortSignal) => async (blockNumber: number) => {
-      const shouldExecute = this._blockCache.has(blockNumber);
+      const shouldExecute = !this._blockCache.has(blockNumber);
       this.log(`Received block ${blockNumber} - Executing: ${shouldExecute}`);
       if (!shouldExecute) {
         return;
