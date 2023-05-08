@@ -13,7 +13,7 @@ import { config } from '@/config';
 import { AbstractProcess } from '@/lib/process/process.abstract';
 import { ProcessOptions } from '@/lib/process/types';
 
-import { safeWebSocketSubscription } from '../utils/safe-websocket-subscription';
+import { getBlockProvider } from '../utils/safe-websocket-subscription';
 
 interface JobData {
   id: string;
@@ -110,38 +110,54 @@ export class BlockScheduler extends AbstractProcess<JobData, JobResult> {
       }
     };
 
+    const blockProvider = getBlockProvider(this._wsProvider.connection.url);
+    let cancelBlockSubscription: undefined | (() => void);
     try {
       await redlock.using([lockKey], lockDuration, async (signal) => {
         this.log(`Acquired lock!`);
         const callback = handler(signal);
+
+        blockProvider.on('block', callback);
+
+        cancelBlockSubscription = () => {
+          blockProvider.off('block', callback);
+        };
         /**
          * use web sockets to attempt to get block numbers
          * right away
          */
-        safeWebSocketSubscription(this._wsProvider.connection.url, async (provider) => {
-          provider.on('block', callback);
+        // safeWebSocketSubscription(this._wsProvider.connection.url, async (provider) => {
+        //   provider.on('block', callback);
 
-          return new Promise((resolve) => {
-            // in the case that the signal is aborted, unsubscribe from block events
-            const abortHandler = () => {
-              this.log(`Received abort signal, unsubscribed from block events`);
-              provider.off('block', callback);
-              signal.removeEventListener('abort', abortHandler);
-              resolve();
-            };
-            signal.addEventListener('abort', abortHandler);
+        //   return new Promise((resolve) => {
+        //     // in the case that the signal is aborted, unsubscribe from block events
+        //     const abortHandler = () => {
+        //       this.log(`Received abort signal, unsubscribed from block events`);
+        //       provider.removeAllListeners();
+        //       signal.removeEventListener('abort', abortHandler);
+        //       provider
+        //         .destroy()
+        //         .then(() => {
+        //           resolve();
+        //         })
+        //         .catch((err) => {
+        //           this.error(`Failed to destroy provider ${err}`);
+        //           resolve();
+        //         });
+        //     };
+        //     signal.addEventListener('abort', abortHandler);
 
-            // in the case that the provider is disconnected, resolve the promise and unsubscribe from signal events
-            const disconnectHandler = () => {
-              this.log(`Provider disconnected, unsubscribed from block events`);
-              signal.removeEventListener('abort', abortHandler);
-              resolve();
-            };
-            provider._websocket.on('close', disconnectHandler);
-          });
-        }).catch((err) => {
-          this.error(`Unexpected error! Safe WebSocket Subscription Failed. ${err}`);
-        });
+        //     // in the case that the provider is disconnected, resolve the promise and unsubscribe from signal events
+        //     const disconnectHandler = () => {
+        //       this.log(`Provider disconnected, unsubscribed from block events`);
+        //       signal.removeEventListener('abort', abortHandler);
+        //       resolve();
+        //     };
+        //     provider._websocket.on('close', disconnectHandler);
+        //   });
+        // }).catch((err) => {
+        //   this.error(`Unexpected error! Safe WebSocket Subscription Failed. ${err}`);
+        // });
 
         /**
          * poll in-case the websocket connection fails
@@ -155,6 +171,7 @@ export class BlockScheduler extends AbstractProcess<JobData, JobResult> {
         }
       });
     } catch (err) {
+      cancelBlockSubscription?.();
       if (err instanceof ExecutionError) {
         this.warn(`Failed to acquire lock`);
         await sleep(3000);

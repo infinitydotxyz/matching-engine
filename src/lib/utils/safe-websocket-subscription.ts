@@ -1,14 +1,17 @@
 import { providers } from 'ethers';
+import EventEmitter from 'events';
+import { nanoid } from 'nanoid';
 
 import { sleep } from '@infinityxyz/lib/utils';
 
-import { logger } from '@/common/logger';
+import { getComponentLogger, logger } from '@/common/logger';
 
 const EXPECTED_PONG_BACK = 15000;
 const KEEP_ALIVE_CHECK_INTERVAL = 7500;
 
 const initiateSafeWebSocketSubscription = async (
-  providerUrl: string
+  providerUrl: string,
+  logger: ReturnType<typeof getComponentLogger>
 ): Promise<{ provider: providers.WebSocketProvider; providerValid: Promise<void> }> => {
   const webSocketProvider = new providers.WebSocketProvider(providerUrl);
   let hasClosed = false;
@@ -21,10 +24,10 @@ const initiateSafeWebSocketSubscription = async (
 
     webSocketProvider._websocket.on('open', () => {
       if (hasOpened) {
-        logger.log('websocket-provider', `Received open event after websocket provider has already opened once`);
+        logger.log(`Received open event after websocket provider has already opened once`);
         return;
       } else if (hasClosed) {
-        logger.log('websocket-provider', `Received open event after websocket provider has already closed`);
+        logger.log(`Received open event after websocket provider has already closed`);
         return;
       }
       hasOpened = true;
@@ -54,6 +57,10 @@ const initiateSafeWebSocketSubscription = async (
   });
 
   const providerValidPromise = new Promise<void>((resolve, reject) => {
+    webSocketProvider._websocket.on('message', (data: unknown) => {
+      logger.log(`Received message: ${data}`);
+    });
+
     webSocketProvider._websocket.on('close', () => {
       hasClosed = true;
       if (keepAliveInterval) {
@@ -69,13 +76,13 @@ const initiateSafeWebSocketSubscription = async (
         webSocketProvider
           .destroy()
           .then(() => {
-            logger.error('websocket-provider', `WebSocket destroyed`);
+            logger.error(`WebSocket destroyed`);
           })
           .catch((err) => {
-            logger.error('websocket-provider', `WebSocket destroy failed: ${err}`);
+            logger.error(`WebSocket destroy failed: ${err}`);
           });
       } catch (err) {
-        logger.error('websocket-provider', `WebSocket closing failed: ${err}`);
+        logger.error(`WebSocket closing failed: ${err}`);
       }
 
       reject('Websocket provider closed');
@@ -94,31 +101,45 @@ export const safeWebSocketSubscription = async (
 ) => {
   let numConsecutiveFailures = 0;
   for (;;) {
+    const id = nanoid(4);
+    const logger = getComponentLogger(`websocket-provider:${id}`);
     try {
-      const { provider, providerValid } = await initiateSafeWebSocketSubscription(providerUrl);
+      const { provider, providerValid } = await initiateSafeWebSocketSubscription(providerUrl, logger);
+      await callback(provider);
       numConsecutiveFailures = 0;
-      const safeCallback = new Promise<void>((resolve) => {
-        callback(provider)
-          .then(() => {
-            resolve();
-          })
-          .catch((err) => {
-            resolve();
-          });
-      });
-
-      await Promise.race([safeCallback, providerValid]);
-      provider._websocket.terminate();
+      await providerValid;
     } catch (err) {
       numConsecutiveFailures += 1;
-      logger.error('websocket-provider', `WebSocket subscription failed: ${err}`);
-      logger.error('websocket-provider', `WebSocket subscription closed. Reconnecting...`);
+      logger.error(`WebSocket subscription failed: ${err}`);
+      logger.error(`WebSocket subscription closed. Reconnecting...`);
 
       if (numConsecutiveFailures > 5) {
-        logger.error('websocket-provider', `Too many consecutive failures, sleeping...`);
+        logger.error(`Too many consecutive failures, sleeping...`);
         await sleep(10_000);
       }
       continue;
     }
+  }
+};
+
+const emitters: { [providerUrl: string]: EventEmitter } = {};
+
+export const getBlockProvider = (providerUrl: string) => {
+  if (emitters[providerUrl]) {
+    return emitters[providerUrl];
+  } else {
+    const emitter = new EventEmitter();
+
+    safeWebSocketSubscription(providerUrl, async (provider) => {
+      provider.on('block', (blockNumber) => {
+        emitter.emit('block', blockNumber);
+      });
+
+      await Promise.resolve();
+    }).catch((err) => {
+      logger.error('block-provider', `Safe WebSocket subscription failed: ${err}`);
+    });
+    emitters[providerUrl] = emitter;
+    return emitter;
   }
 };
