@@ -56,7 +56,7 @@
     "nanoid": "^3.3.4",
     "p-queue": "^6.6.2",
     "phin": "^3.7.0",
-    "quick-lru": "^6.1.1",
+    "quick-lru": "5.1.1",
     "redlock": "^5.0.0-beta.2",
     "winston": "^3.8.2"
   },
