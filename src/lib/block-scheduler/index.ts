@@ -1,6 +1,7 @@
 import { Job } from 'bullmq';
 import { ethers } from 'ethers';
 import { Redis } from 'ioredis';
+import QuickLRU from 'quick-lru';
 import { ExecutionError } from 'redlock';
 
 import { FlashbotsBundleProvider } from '@flashbots/ethers-provider-bundle';
@@ -24,6 +25,7 @@ interface JobResult {
 }
 
 export class BlockScheduler extends AbstractProcess<JobData, JobResult> {
+  protected _blockCache = new QuickLRU<number, unknown>({ maxSize: 64 });
   constructor(
     db: Redis,
     chainId: ChainId,
@@ -76,7 +78,12 @@ export class BlockScheduler extends AbstractProcess<JobData, JobResult> {
 
     let cancel: undefined | (() => void);
     const handler = (signal: AbortSignal) => async (blockNumber: number) => {
-      this.log(`Received block ${blockNumber}`);
+      const shouldExecute = this._blockCache.has(blockNumber);
+      this.log(`Received block ${blockNumber} - Executing: ${shouldExecute}`);
+      if (!shouldExecute) {
+        return;
+      }
+      this._blockCache.set(blockNumber, true);
 
       if (signal.aborted) {
         cancel?.();
