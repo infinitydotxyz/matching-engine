@@ -1,4 +1,14 @@
+# Matching Engine 
+* Contains 3 services per chain
+    * matching-engine
+    * execution-engine
+    * matching-engine-api (optional, only required for running the orderbook explorer)
 
+Env Variables
+* Supports `.env.<ENV>.<CHAIN_NAME>.<LOCATION>`
+    * ENV is based on the `INFINITY_NODE_ENV` env variable can be `prod` or `dev` 
+    * CHAIN_NAME is set based on the `CHAIN_ID` env variable and currently supports `mainnet` or `goerli`
+    * LOCATION is set based on the `IS_DEPLOYED` env variable and can be either `local` or `deploy`
 
 ## Deploying
 * Note: the deploy steps listed below are optimized for zero downtime
