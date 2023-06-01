@@ -1,12 +1,13 @@
 
 
 ## Deploying
-* Note: the deploy steps listed below are optimized for zero downtime 
+* Note: the deploy steps listed below are optimized for zero downtime
 
 1. Deploy a redis instance
     * For mainnet run `npm run deploy:prod:mainnet:redis -- version=<version number>` 
         * The version number is a unique identifier to be able to deploy multiple redis instances for the same env - it can be any number as long as that number isn't already in use 
-    * The script will repeatedly log `Deploying...` until the redis instance is ready - once ready it will log the ip and read only ip of the redis instance - update your .env files with these ips before moving on to the next step
+    * The script will repeatedly log `Deploying...` until the redis instance is ready - once ready it will log the ip and read only ip of the redis instance
+    *  Update your .env files with these ips before moving on to the next step
 
 2. Deploy the matching engine
     * Mainnet `npm run deploy:prod:mainnet:me`
